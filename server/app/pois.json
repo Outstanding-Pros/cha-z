@@ -1,0 +1,29 @@
+[
+  {
+    "id": "jeju-aewol-coast",
+    "name": "애월 해안도로",
+    "region": "제주",
+    "lat": 33.4636,
+    "lng": 126.3093,
+    "radiusM": 800,
+    "scene": "a winding coastal road along turquoise sea and black volcanic rocks of Aewol, Jeju Island"
+  },
+  {
+    "id": "jeju-hyeopjae",
+    "name": "협재 해변",
+    "region": "제주",
+    "lat": 33.3940,
+    "lng": 126.2397,
+    "radiusM": 700,
+    "scene": "white sand beach with emerald water and a small island (Biyangdo) on the horizon, Hyeopjae, Jeju"
+  },
+  {
+    "id": "jeju-seongsan",
+    "name": "성산일출봉",
+    "region": "제주",
+    "lat": 33.4581,
+    "lng": 126.9425,
+    "radiusM": 1200,
+    "scene": "the green volcanic tuff cone Seongsan Ilchulbong rising from the sea at sunrise, Jeju"
+  }
+]

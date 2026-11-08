@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Chaz" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/chaz_bg</item>
+        <item name="android:statusBarColor">@color/chaz_bg</item>
+        <item name="android:navigationBarColor">@color/chaz_bg</item>
+    </style>
+</resources>

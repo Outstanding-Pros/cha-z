@@ -1,0 +1,9 @@
+# Android Studio가 sdk.dir 을 자동으로 채웁니다.
+# sdk.dir=C\:\Users\<you>\AppData\Local\Android\Sdk
+
+# 로컬 개발 서버 (server/ — Edge Function 대체). 에뮬레이터 기준 호스트 PC 주소
+CHAZ_SERVER_URL=http://10.0.2.2:8787
+
+# T10 Supabase 연동 시 채움
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
