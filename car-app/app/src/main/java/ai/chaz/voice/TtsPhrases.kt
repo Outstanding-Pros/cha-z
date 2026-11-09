@@ -31,6 +31,11 @@ class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
     override fun sendFailed() = res.getString(R.string.tts_send_failed)
     override fun noResult() = res.getString(R.string.tts_no_result)
     override fun handoffNotReady() = res.getString(R.string.tts_handoff_not_ready)
+    override fun lightChanged(label: String) = res.getString(R.string.tts_light_changed, label)
+    fun spotGuide(name: String?) =
+        if (name.isNullOrBlank()) res.getString(R.string.tts_spot_generic)
+        else res.getString(R.string.tts_spot_guide, name, ai.chaz.spot.SpotGuidePolicy.copula(name))
+    fun sunsetGuide() = res.getString(R.string.tts_sunset_guide)
 }
 
 /** 테스트용 고정 문구. */
@@ -50,4 +55,5 @@ object PlainTtsPhrases : TtsPhrases, VoicePhrases {
     override fun sendFailed() = "send-failed"
     override fun noResult() = "no-result"
     override fun handoffNotReady() = "handoff-not-ready"
+    override fun lightChanged(label: String) = "light:$label"
 }

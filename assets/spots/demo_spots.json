@@ -1,0 +1,8 @@
+[
+  { "id": "handam", "name": "한담해변", "lat": 33.4627, "lon": 126.3101, "kind": "beach", "scene": "COAST" },
+  { "id": "aewol-coast", "name": "애월 해안도로 전망대", "lat": 33.4669, "lon": 126.3193, "kind": "viewpoint", "scene": "COAST" },
+  { "id": "gwakji", "name": "곽지해수욕장", "lat": 33.4504, "lon": 126.3048, "kind": "beach", "scene": "COAST" },
+  { "id": "hyeopjae", "name": "협재해수욕장", "lat": 33.3940, "lon": 126.2398, "kind": "beach", "scene": "COAST" },
+  { "id": "seongsan", "name": "성산일출봉", "lat": 33.4589, "lon": 126.9425, "kind": "peak", "scene": "MOUNTAIN" },
+  { "id": "saebyeol", "name": "새별오름", "lat": 33.3660, "lon": 126.3577, "kind": "peak", "scene": "MOUNTAIN" }
+]

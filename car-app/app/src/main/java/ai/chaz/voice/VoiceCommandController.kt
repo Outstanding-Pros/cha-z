@@ -25,6 +25,8 @@ interface CommandSink {
     val phonePaired: Boolean
     /** 마지막 완성본(없으면 기본 레이아웃으로 만들어)을 폰으로 보낸다. */
     suspend fun sendToPhone(): SendOutcome
+    /** 정차 중 조명 바꾸기. 바꾼 프리셋 이름, 못 바꾸면 null. */
+    suspend fun changeLight(preset: String?): String?
 }
 
 enum class SendOutcome { SENT, NO_RESULT, FAILED }
@@ -41,6 +43,7 @@ interface VoicePhrases {
     fun sendFailed(): String
     fun noResult(): String
     fun handoffNotReady(): String
+    fun lightChanged(label: String): String
 }
 
 /**
@@ -71,6 +74,9 @@ class VoiceCommandController(
     private val micLock = Mutex()
     @Volatile private var paused = false
     @Volatile var ignoreWakeUntil = 0L
+    /** 스팟 가이드 직후 15초: 이 안에 '차즈'면 T3(스팟 가이드 수락)으로 기록. */
+    @Volatile var spotWindowUntil = 0L
+    private fun wakeTrigger() = if (now() < spotWindowUntil) TriggerSource.SPOT_GUIDE else TriggerSource.WAKE_WORD
     private var wakeJob: Job? = null
 
     val wakeRunning: Boolean get() = wakeJob?.isActive == true
@@ -147,11 +153,11 @@ class VoiceCommandController(
                 if (e is CancellationException) throw e
                 null
             }
-            if (follow == null) execute(Intent.CaptureDefault, TriggerSource.WAKE_WORD)
+            if (follow == null) execute(Intent.CaptureDefault, wakeTrigger())
             else handleText(follow, requireWake = false)
             return
         }
-        execute(resolve(p), TriggerSource.WAKE_WORD)
+        execute(resolve(p), wakeTrigger())
     }
 
     /** 텍스트로 명령 주입 (음성 버튼 결과, 디버그 패널, adb). */
@@ -159,7 +165,7 @@ class VoiceCommandController(
         val p = IntentParser.parse(text)
         _lastHeard.value = text
         if (requireWake && !p.wake) return
-        execute(resolve(p), if (p.wake) TriggerSource.WAKE_WORD else TriggerSource.VOICE_BUTTON)
+        execute(resolve(p), if (p.wake) wakeTrigger() else TriggerSource.VOICE_BUTTON)
     }
 
     private suspend fun resolve(p: Parsed): Intent =
@@ -188,7 +194,10 @@ class VoiceCommandController(
                 },
             )
             Intent.HandoffPhone -> speakSafely(if (sink.phonePaired) phrases.handoffNotReady() else phrases.phoneNotPaired()) // TODO(T15)
-            is Intent.LightMood -> speakSafely(if (sink.driving) phrases.lightWhileDriving() else phrases.lightNotReady()) // TODO(T13)
+            is Intent.LightMood -> speakSafely(
+                if (sink.driving) phrases.lightWhileDriving()
+                else sink.changeLight(intent.preset)?.let { phrases.lightChanged(it) } ?: phrases.lightNotReady(),
+            )
             Intent.Help -> speakSafely(phrases.help())
             Intent.Unknown -> speakSafely(phrases.unknown())
         }

@@ -20,6 +20,7 @@ class VoiceCommandControllerTest {
         var sendOutcome = SendOutcome.SENT
         var sends = 0
         override suspend fun sendToPhone(): SendOutcome { sends++; return sendOutcome }
+        override suspend fun changeLight(preset: String?): String? = preset ?: "오션"
         override fun startCapture(trigger: TriggerSource, config: CaptureConfig) { started += trigger to config }
         override fun stopCapture() { stops++ }
     }
@@ -106,6 +107,10 @@ class VoiceCommandControllerTest {
         e.sink.driving = true
         e.ctl.onHeard("차즈 분위기 바꿔줘")
         assertEquals(listOf("phone-not-paired", "help", "light-driving"), e.speech.spoken)
+        e.sink.driving = false
+        e.ctl.onHeard("차즈 분위기 바꿔줘")
+        e.ctl.onHeard("차즈 골든아워 조명")
+        assertEquals(listOf("light:오션", "light:골든아워"), e.speech.spoken.takeLast(2))
     }
 
     @Test fun `폰으로 보내기 - 연결 안 됨, 보냄, 사진 없음`() = runTest {
@@ -117,6 +122,13 @@ class VoiceCommandControllerTest {
         e.ctl.onHeard("차즈 폰으로 보내줘")
         assertEquals(listOf("phone-not-paired", "sent", "no-result"), e.speech.spoken)
         assertEquals(2, e.sink.sends)
+    }
+
+    @Test fun `스팟 가이드 15초 안의 차즈는 T3 스팟 가이드 수락`() = runTest {
+        val e = env(now = 10_000)
+        e.ctl.spotWindowUntil = 20_000
+        e.ctl.onHeard("차즈 1분 동안 10번")
+        assertEquals(TriggerSource.SPOT_GUIDE, e.sink.started.single().first)
     }
 
     @Test fun `음성 버튼 경로는 호출어 없이도 실행`() = runTest {

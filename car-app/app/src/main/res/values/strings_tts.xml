@@ -18,4 +18,9 @@
     <string name="tts_send_failed">폰으로 보내지 못했어요. 서버 연결을 확인해 주세요.</string>
     <string name="tts_no_result">보낼 사진이 아직 없어요. 먼저 찍어 볼까요?</string>
     <string name="tts_handoff_not_ready">폰 편집은 곧 준비할게요. 완성본은 \'폰으로 보내줘\'로 받을 수 있어요.</string>
+    <!-- %1$s = 스팟명, %2$s = 이에요/예요 -->
+    <string name="tts_spot_guide">곧 %1$s%2$s. 창밖 풍경과 함께 찍으려면 \'차즈\'라고 말해 주세요.</string>
+    <string name="tts_spot_generic">곧 멋진 스팟이에요. 창밖 풍경과 함께 찍으려면 \'차즈\'라고 말해 주세요.</string>
+    <string name="tts_sunset_guide">노을 시간이에요. 창밖과 함께 찍으려면 \'차즈\'라고 말해 주세요.</string>
+    <string name="tts_light_changed">%1$s 조명으로 바꿨어요.</string>
 </resources>

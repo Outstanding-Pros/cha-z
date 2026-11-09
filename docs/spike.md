@@ -93,6 +93,14 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - 서버가 알려 주는 QR 주소는 PC 의 기본 경로 IP(이 PC 는 <PC 공인 IP>). 다르면 `PUBLIC_BASE_URL` 로 지정.
 - **실제 폰 브라우저 테스트는 사용자 확인 필요** (방화벽·같은 네트워크). http 라 Web Share·서비스 워커는 꺼지고 다운로드·공유 링크로 대신.
 
+### T12·T13 스팟 가이드·앰비언트 실측
+- 데모 드라이브(25m/s): 시작 ~78초 뒤 애월 해안도로 전망대 399m 에서 가이드 → 조명 '오션' 3초 페이드(pleos-vehicle-light, Set 실패 로그 없음) → TTS "곧 애월 해안도로 전망대예요…" → 9초 뒤 "차즈" → 세션 trigger=SPOT_GUIDE, spotName 스탬프 → 세션 끝 1초 뒤 조명 복원.
+- 주행 화면 2줄째 "다음 스팟 애월 해안도로 전망대 599m".
+- NaviHelper 현재 위치는 에뮬레이터 기본값(제주 아님), `adb emu geo fix` 는 즉시 반영되지 않음 → 데모 경로/수동 위치(`--es loc 33.46,126.31`).
+- Overpass: Android 기본 User-Agent 는 406 → UA 지정. 에뮬레이터에서 status 요청이 자주 타임아웃 → 데모 스팟으로 대체.
+- Open-Meteo 날씨·일몰 정상(일몰 17:26).
+- 실제 차량 실내등 색 변화는 에뮬레이터에서 눈으로 확인할 수 없음 → **사무국 문의: 실차 Light Set 허용 범위**.
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 

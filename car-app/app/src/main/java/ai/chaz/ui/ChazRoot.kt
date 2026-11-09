@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class Tab(val label: String, val ready: Boolean) {
-    HOME("촬영", true), GALLERY("갤러리", false), LIGHT("조명", false), SETTINGS("설정", true), SPIKE("점검", true)
+    HOME("촬영", true), GALLERY("갤러리", false), LIGHT("조명", true), SETTINGS("설정", true), SPIKE("점검", true)
 }
 
 @Composable
@@ -44,10 +44,12 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
     val driving by graph.driving.status.collectAsState()
     val model by graph.capture.model.collectAsState()
     val state = model.state
+    val nearest by graph.spotGuide.nearest.collectAsState()
+    val nextSpot = nearest?.let { "다음 스팟 ${it.spot.name} ${ai.chaz.ui.light.dist(it.distanceM)}" }
     val (line1, line2) = when (state) {
         is AppState.Capturing -> "촬영 중 · ${state.session.config.count}컷 중 ${state.shotsTaken}" to "창밖과 함께 웃어 주세요"
         is AppState.Saved -> "저장했어요" to "정차 후 편집하거나 '차즈 스마트폰에서 편집할게'라고 말해 주세요"
-        else -> "촬영 대기" to "'차~즈'라고 말하면 찍어요"
+        else -> "촬영 대기" to (nextSpot ?: "'차~즈'라고 말하면 찍어요")
     }
 
     Box(Modifier.fillMaxSize().background(Tokens.bg)) {
@@ -66,6 +68,7 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
                         Tab.HOME -> if (state is AppState.Editing) EditScreen(graph) else StandbyScreen(graph)
                         Tab.SETTINGS -> SettingsScreen(graph)
                         Tab.SPIKE -> SpikeScreen(graph)
+                        Tab.LIGHT -> ai.chaz.ui.light.LightScreen(graph)
                         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("${tab.label} — 준비 중", color = Tokens.text2, fontSize = 20.sp)
                         }
@@ -73,6 +76,8 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
                 }
             }
         }
+        // 앰비언트 조명 테두리 (시뮬레이션 또는 실제 조명 미러)
+        ai.chaz.ui.light.AmbientBorder(graph)
         // 마이크 사용 중 표시 (SPEC: 마이크를 쓰는 동안 항상 표시)
         val listening by graph.voice.listening.collectAsState()
         if (listening) {

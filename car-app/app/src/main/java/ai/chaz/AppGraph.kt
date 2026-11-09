@@ -33,6 +33,23 @@ import ai.chaz.voice.PleosSpeechInput
 import ai.chaz.voice.ServerSpeechInput
 import ai.chaz.voice.SpeechInputRouter
 import ai.chaz.voice.VoiceCommandController
+import ai.chaz.ambience.AmbienceDirector
+import ai.chaz.ambience.AmbientLightController
+import ai.chaz.ambience.CaptureContext
+import ai.chaz.ambience.ContextProvider
+import ai.chaz.ambience.LightPreset
+import ai.chaz.ambience.PleosAmbientLight
+import ai.chaz.ambience.SimulatedAmbientLight
+import ai.chaz.ambience.SpotGuideRunner
+import ai.chaz.platform.navi.AndroidLocationSource
+import ai.chaz.platform.navi.DemoRouteSource
+import ai.chaz.platform.navi.LocationHub
+import ai.chaz.platform.navi.NaviHelperLocationSource
+import ai.chaz.spot.DemoSpotSource
+import ai.chaz.spot.OverpassSpotSource
+import ai.chaz.spot.SpotGuidePolicy
+import ai.chaz.spot.SpotRepository
+import kotlinx.coroutines.Job
 import ai.chaz.voice.SendOutcome
 import ai.chaz.sync.DeviceIdentity
 import ai.chaz.sync.PhoneLink
@@ -100,7 +117,7 @@ class AppGraph(context: Context) {
         CaptureController(
             scope = scope,
             machine = AppStateMachine { trigger, config ->
-                Session(newSessionId(), System.currentTimeMillis(), config, trigger)
+                Session(newSessionId(), System.currentTimeMillis(), config, trigger, spotName = spotGuide.placeForSession())
             },
             engine = CaptureSessionEngine(speech, cues, FileSessionStore(appContext), phrases),
             sources = { _cameras.value },
@@ -129,6 +146,7 @@ class AppGraph(context: Context) {
                 override fun stopCapture() = capture.stop()
                 override val phonePaired get() = phone.state.value.paired
                 override suspend fun sendToPhone() = sendLatestToPhone()
+                override suspend fun changeLight(preset: String?) = this@AppGraph.changeLight(preset)
             },
             speech = speech,
             input = speechInput,
@@ -162,6 +180,66 @@ class AppGraph(context: Context) {
     }
 
     val previewPrefs = MutableStateFlow(PreviewPrefs())
+
+    // ---- T12 위치·스팟 가이드 / T13 앰비언트 ----
+    val location = LocationHub(scope, DemoRouteSource(DemoSpotSource.route(appContext), scope))
+    private val naviLocation by lazy {
+        NaviHelperLocationSource(appContext, scope).also { src ->
+            src.onRoutingCompleted = { scope.launch { location.location.value?.let { spotRepo.spotsNear(it, force = true) } } }
+        }
+    }
+    private val androidLocation by lazy { AndroidLocationSource(appContext) }
+    private val demoSpots = DemoSpotSource(appContext)
+    private val overpass = OverpassSpotSource()
+    val spotRepo = SpotRepository {
+        listOfNotNull(overpass.takeIf { availability.selectedId(Feature.SPOTS) == ProbeChains.Ids.SPOTS_OVERPASS }, demoSpots)
+    }
+    private val contextProvider = ContextProvider(useNetwork = { availability.selectedId(Feature.WEATHER) == ProbeChains.Ids.WEATHER_OPEN_METEO })
+    private val _context = MutableStateFlow<CaptureContext?>(null)
+    val context: StateFlow<CaptureContext?> = _context.asStateFlow()
+    suspend fun refreshContext(): CaptureContext =
+        contextProvider.current(location.location.value, spotGuide.spots.value).also { _context.value = it }
+
+    private val simulatedLight = SimulatedAmbientLight()
+    private val pleosLight by lazy { PleosAmbientLight(vehicleHub) }
+    val ambientLight: AmbientLightController
+        get() = if (availability.selectedId(Feature.AMBIENT_LIGHT) == ProbeChains.Ids.LIGHT_PLEOS) pleosLight else simulatedLight
+    val ambience = AmbienceDirector(light = { ambientLight }, context = { refreshContext() }, driving = { driving.restricted.value })
+
+    val spotGuide: SpotGuideRunner by lazy {
+        SpotGuideRunner(scope, location, spotRepo, SpotGuidePolicy(), sunsetMs = { refreshContext().sunsetMs }, onGuide = { onSpotGuide(it) })
+    }
+    private var spotEpisode: Job? = null
+
+    /** 스팟·노을 가이드: 조명 에피소드 시작 → 안내 → 15초 '차즈' 대기 → 촬영이 없으면 조명 복원. */
+    private suspend fun onSpotGuide(d: SpotGuidePolicy.Decision) {
+        if (capture.model.value.state is AppState.Capturing) return
+        val text = when (d) {
+            is SpotGuidePolicy.Decision.SpotGuide -> phrases.spotGuide(d.spot.name)
+            SpotGuidePolicy.Decision.SunsetGuide -> phrases.sunsetGuide()
+            SpotGuidePolicy.Decision.None -> return
+        }
+        android.util.Log.i("ChazSpot", "가이드: $d")
+        scope.launch { ambience.begin("spot-guide") }
+        runCatching { speech.speak(text) }
+        voice.spotWindowUntil = System.currentTimeMillis() + 15_000
+        spotEpisode?.cancel()
+        spotEpisode = scope.launch {
+            kotlinx.coroutines.delay(15_000)
+            if (capture.model.value.state !is AppState.Capturing) ambience.end()
+        }
+    }
+
+    private fun attachLocation() {
+        when (availability.selectedId(Feature.LOCATION)) {
+            ProbeChains.Ids.LOC_NAVI -> location.attach(naviLocation)
+            ProbeChains.Ids.LOC_ANDROID -> location.attach(androidLocation)
+            else -> location.detach() // 데모 경로는 조명 화면·adb 로 켠다
+        }
+    }
+
+    /** 정차 중 조명 화면·음성에서 수동 변경. */
+    suspend fun changeLight(name: String?): String? = ambience.manual(name?.let { LightPreset.byLabel(it) })?.label
 
     // 폰 연결 (T10: 로컬 서버가 Supabase 대체)
     val phone = PhoneLink(BuildConfig.CHAZ_SERVER_URL, DeviceIdentity.carId(appContext), scope)
@@ -220,6 +298,8 @@ class AppGraph(context: Context) {
     private fun updateWakeLoop() {
         val micOk = appContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (foreground && micOk) voice.startWakeLoop() else voice.stopWakeLoop()
+        // 스팟 가이드도 앱이 화면에 있을 때만 (백그라운드 B1 미검증 → SPEC 'window 에 있을 때만')
+        if (foreground) spotGuide.start() else spotGuide.stop()
     }
 
     private val _probing = MutableStateFlow(false)
@@ -236,6 +316,9 @@ class AppGraph(context: Context) {
             capture.model.collect { m ->
                 val c = m.state is AppState.Capturing
                 if (wasCapturing && !c) voice.ignoreWakeUntil = System.currentTimeMillis() + 3_000
+                // 앰비언트: 세션 시작 때 한 번 적용(가이드에서 이어지면 그대로), 끝나면 복원
+                if (!wasCapturing && c) { spotEpisode?.cancel(); scope.launch { ambience.begin("session") } }
+                if (wasCapturing && !c) scope.launch { kotlinx.coroutines.delay(1_000); ambience.end() }
                 wasCapturing = c
             }
         }
@@ -256,8 +339,10 @@ class AppGraph(context: Context) {
                 attachDrivingGate()
                 rebuildCameras()
                 // 기본 안내 문구를 미리 준비 (Pleos 는 모델 로딩, 비즈라우터는 사전 합성)
+                attachLocation()
                 updateWakeLoop()
                 phone.refresh()
+                refreshContext()
                 speech.prepare(listOf(phrases.captureStart(CaptureConfig()), phrases.doneParked(), phrases.doneDriving()))
             } finally {
                 _probing.value = false

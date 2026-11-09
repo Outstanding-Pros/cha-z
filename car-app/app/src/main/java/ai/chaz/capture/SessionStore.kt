@@ -72,6 +72,7 @@ class FileSessionStore(context: Context) : SessionStore {
             .put("id", session.id)
             .put("startedAt", session.startedAt)
             .put("trigger", session.trigger.name)
+            .put("spotName", session.spotName ?: JSONObject.NULL)
             .put("status", session.status.name)
             .put("durationSec", session.config.durationSec)
             .put("count", session.config.count)

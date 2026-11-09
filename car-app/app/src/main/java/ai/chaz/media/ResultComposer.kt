@@ -72,7 +72,7 @@ class ResultComposer(
         val kinds = (result.cuts.flatMap { c -> c.frames.map { it.source } }).toSet()
         return RenderOptions(
             stamp = StampInfo(
-                place = null, // TODO(T12): SpotRepository 스팟명 / NaviHelper 위치
+                place = result.session.spotName,
                 dateText = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date(result.session.startedAt)),
                 weather = null, // TODO(T13): ContextProvider
                 driveMode = v.driveMode(),

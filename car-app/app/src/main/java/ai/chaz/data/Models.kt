@@ -64,4 +64,6 @@ data class Session(
     val config: CaptureConfig,
     val trigger: TriggerSource,
     val status: SessionStatus = SessionStatus.RAW,
+    /** 스팟 가이드로 찍었거나 1km 안 스팟 (스탬프 장소명). */
+    val spotName: String? = null,
 )

@@ -46,6 +46,11 @@ object ProbeChains {
         const val INTERIOR_WEBCAM = "emulator.webcam"
 
         const val SEGMENTER_MEDIAPIPE = "mediapipe.segmenter"
+        const val SPOTS_OVERPASS = "overpass.tourapi"
+        const val LIGHT_PLEOS = "pleos.vehicle.light"
+        const val LOC_NAVI = "pleos.navihelper"
+        const val LOC_ANDROID = "android.location-manager"
+        const val WEATHER_OPEN_METEO = "open-meteo"
         const val VEHICLE_PLEOS = "pleos.vehicle.state"
     }
 
@@ -73,13 +78,13 @@ object ProbeChains {
                 Candidate("fallback.hidden", "표시 생략", Tier.FALLBACK) { ProbeResult.Ok("스탬프에서 차량 데이터 생략") },
             ),
             Feature.AMBIENT_LIGHT to listOf(
-                Candidate("pleos.vehicle.light", "Vehicle SDK Light Set", Tier.PLEOS_SDK) { PleosVehicleHub.probeAmbientLight(hub) },
+                Candidate(Ids.LIGHT_PLEOS, "Vehicle SDK Light Set", Tier.PLEOS_SDK) { PleosVehicleHub.probeAmbientLight(hub) },
                 Candidate("fallback.screen-border", "화면 테두리 색 시뮬레이션", Tier.FALLBACK) { ProbeResult.Ok("'앰비언트 라이트(시뮬레이션)' 표기") },
             ),
             Feature.LOCATION to listOf(
-                Candidate("pleos.navihelper", "NaviHelper SDK", Tier.PLEOS_SDK) { NaviProbes.probeNaviHelper(ctx) },
+                Candidate(Ids.LOC_NAVI, "NaviHelper SDK", Tier.PLEOS_SDK) { NaviProbes.probeNaviHelper(ctx) },
                 Candidate("pleos.fused-location", "FusedLocation SDK", Tier.PLEOS_SDK) { ProbeResult.Pending("NaviHelper 실패 시 T12에서 추가") },
-                Candidate("android.location-manager", "Android LocationManager", Tier.PLATFORM) { NaviProbes.probeLocationManager(ctx) },
+                Candidate(Ids.LOC_ANDROID, "Android LocationManager", Tier.PLATFORM) { NaviProbes.probeLocationManager(ctx) },
                 Candidate("fallback.demo-route", "데모 경로 재생", Tier.FALLBACK) { ProbeResult.Ok("데모 경로 사용") },
             ),
             Feature.WAKE_WORD to listOf(
@@ -137,12 +142,12 @@ object ProbeChains {
                 Candidate("bizrouter.image-edit", "비즈라우터 이미지 편집", Tier.BIZROUTER) { ProbeResult.Pending("T16") },
             ),
             Feature.SPOTS to listOf(
-                Candidate("overpass.tourapi", "Overpass + TourAPI", Tier.PLATFORM) { ProbeResult.Pending("T12") },
-                Candidate("bizrouter.text", "비즈라우터 텍스트(명소 추천)", Tier.BIZROUTER) { ProbeResult.Pending("T12") },
+                Candidate(Ids.SPOTS_OVERPASS, "Overpass (TourAPI 는 키 필요)", Tier.PLATFORM) { httpProbe("https://overpass-api.de/api/status") },
+                Candidate("bizrouter.text", "비즈라우터 텍스트(명소 추천)", Tier.BIZROUTER) { ProbeResult.Pending("Overpass 실패 시 — 이후") },
                 Candidate("fallback.demo-spots", "데모 스팟 목록", Tier.FALLBACK) { ProbeResult.Ok("제주 데모 스팟") },
             ),
             Feature.WEATHER to listOf(
-                Candidate("open-meteo", "Open-Meteo", Tier.PLATFORM) { httpProbe("https://api.open-meteo.com/v1/forecast?latitude=33.5&longitude=126.5&daily=sunset&timezone=auto") },
+                Candidate(Ids.WEATHER_OPEN_METEO, "Open-Meteo", Tier.PLATFORM) { httpProbe("https://api.open-meteo.com/v1/forecast?latitude=33.5&longitude=126.5&daily=sunset&timezone=auto") },
                 Candidate("fallback.clock", "시각으로 추정", Tier.FALLBACK) { ProbeResult.Ok("시각 기반") },
             ),
             Feature.MEDIA_COMPOSER to listOf(
@@ -166,7 +171,10 @@ object ProbeChains {
 
     private suspend fun httpProbe(url: String): ProbeResult = withContext(Dispatchers.IO) {
         try {
-            val c = (URL(url).openConnection() as HttpURLConnection).apply { connectTimeout = 3_000; readTimeout = 3_000 }
+            val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 3_000; readTimeout = 5_000
+                setRequestProperty("User-Agent", "cha-z-car-app/0.1") // Overpass 는 Android 기본 UA 를 406 으로 막는다
+            }
             try {
                 if (c.responseCode == 200) ProbeResult.Ok("응답 200") else ProbeResult.Fail("HTTP ${c.responseCode}")
             } finally { c.disconnect() }

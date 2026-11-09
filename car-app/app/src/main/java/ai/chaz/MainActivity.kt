@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         // 개발용 발화 주입: --es say "차즈 1분 동안 10번 찍어줘" (호출어 경로와 같게 처리)
         injectSay(intent)
         injectDrive(intent)
+        injectLocation(intent)
         setContent {
             ChazTheme { ChazRoot(graph, initial) }
         }
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         injectSay(intent)
         injectDrive(intent)
+        injectLocation(intent)
     }
 
     /** 개발용: --es drive on|off|auto (Virtual Console 없이 주행/정차 전환 — 개발용 오버라이드) */
@@ -54,6 +56,20 @@ class MainActivity : ComponentActivity() {
             "off" -> ai.chaz.platform.driving.DrivingGateHub.Override.FORCE_PARKED
             else -> ai.chaz.platform.driving.DrivingGateHub.Override.AUTO
         })
+    }
+
+    /** 개발용: --es loc 33.46,126.31 | off  /  --es demo start|stop */
+    private fun injectLocation(intent: Intent?) {
+        val graph = (application as ChazApp).graph
+        intent?.getStringExtra("loc")?.let { v ->
+            graph.location.setManual(
+                v.split(",").takeIf { it.size == 2 }?.let { (a, b) -> ai.chaz.platform.navi.GeoPoint(a.trim().toDouble(), b.trim().toDouble()) },
+            )
+        }
+        when (intent?.getStringExtra("demo")) {
+            "start" -> { graph.spotGuide.resetTrip(); graph.location.startDemo() }
+            "stop" -> graph.location.stopDemo()
+        }
     }
 
     private fun injectSay(intent: Intent?) {

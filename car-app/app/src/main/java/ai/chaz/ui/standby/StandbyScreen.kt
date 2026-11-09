@@ -75,6 +75,15 @@ fun StandbyScreen(graph: AppGraph) {
             Card(m, title = "카메라") {
                 Text(if (driving.restricted) "주행 중" else "정차 중", color = Tokens.text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text("${driving.source} · ${driving.detail}", color = Tokens.text2, fontSize = 14.sp)
+                val ctx by graph.context.collectAsState()
+                val nearest by graph.spotGuide.nearest.collectAsState()
+                Text(
+                    listOfNotNull(
+                        ctx?.let { "${it.weather.label} · ${it.timeBand.label}" },
+                        nearest?.let { "다음 스팟 ${it.spot.name} ${ai.chaz.ui.light.dist(it.distanceM)}" },
+                    ).joinToString("  ·  ").ifEmpty { "맥락 판정 중" },
+                    color = Tokens.text2, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp),
+                )
                 Box(Modifier.padding(top = 16.dp))
                 listOf(CameraRole.INTERIOR, CameraRole.FRONT, CameraRole.REAR).forEach { role ->
                     val s = sources.firstOrNull { it.role == role }
