@@ -39,9 +39,13 @@ class SimulatedExteriorSource(
 
     override fun releasePreview(view: View) = Unit
 
-    override suspend fun capture(): Bitmap = withContext(Dispatchers.Default) {
-        val out = Bitmap.createBitmap(OUT_W, OUT_H, Bitmap.Config.ARGB_8888)
-        Canvas(out).drawBitmap(image, KenBurns.window(image.width, image.height, clock()).toRect(), Rect(0, 0, OUT_W, OUT_H), PAINT)
+    override suspend fun capture(): Bitmap = render(OUT_W, OUT_H)
+
+    override suspend fun snapshot(): Bitmap = render(SNAP_W, SNAP_H)
+
+    private suspend fun render(w: Int, h: Int): Bitmap = withContext(Dispatchers.Default) {
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        Canvas(out).drawBitmap(image, KenBurns.window(image.width, image.height, clock()).toRect(), Rect(0, 0, w, h), PAINT)
         out
     }
 
@@ -68,6 +72,8 @@ class SimulatedExteriorSource(
     companion object {
         const val OUT_W = 1280
         const val OUT_H = 720
+        const val SNAP_W = 640
+        const val SNAP_H = 360
         private val PAINT = Paint(Paint.FILTER_BITMAP_FLAG)
     }
 }

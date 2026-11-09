@@ -4,6 +4,11 @@ import ai.chaz.AppGraph
 import ai.chaz.capture.CameraRole
 import ai.chaz.capture.CameraSource
 import ai.chaz.capture.CameraSourceFactory
+import ai.chaz.capture.CaptureSessionEngine
+import ai.chaz.data.TriggerSource
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import ai.chaz.platform.Feature
 import ai.chaz.ui.Card
 import ai.chaz.ui.theme.Tokens
@@ -48,6 +53,7 @@ fun StandbyScreen(graph: AppGraph) {
     val selections by graph.availability.state.collectAsState()
     val driving by graph.driving.status.collectAsState()
     val sources by graph.cameras.collectAsState()
+    val progress by graph.capture.progress.collectAsState()
     var mainRole by rememberSaveable { mutableStateOf(CameraRole.INTERIOR) }
     val main = sources.firstOrNull { it.role == mainRole } ?: sources.firstOrNull()
     val others = sources.filter { it !== main }
@@ -55,7 +61,13 @@ fun StandbyScreen(graph: AppGraph) {
     BoxWithConstraints(Modifier.fillMaxSize().padding(24.dp)) {
         val landscape = maxWidth > maxHeight
         val viewfinder = @Composable { m: Modifier ->
-            Viewfinder(m, main, others, onSelect = { mainRole = it.role })
+            Viewfinder(m, main, others, onSelect = { mainRole = it.role }) {
+                CaptureOverlay(
+                    progress = progress,
+                    onShutter = { graph.capture.start(TriggerSource.SHUTTER_BUTTON) },
+                    onStop = { graph.capture.stop() },
+                )
+            }
         }
         val status = @Composable { m: Modifier ->
             Card(m, title = "카메라") {
@@ -94,7 +106,13 @@ fun StandbyScreen(graph: AppGraph) {
 }
 
 @Composable
-private fun Viewfinder(modifier: Modifier, main: CameraSource?, others: List<CameraSource>, onSelect: (CameraSource) -> Unit) {
+private fun Viewfinder(
+    modifier: Modifier,
+    main: CameraSource?,
+    others: List<CameraSource>,
+    onSelect: (CameraSource) -> Unit,
+    overlay: @Composable BoxScope.() -> Unit,
+) {
     Box(
         modifier
             .clip(Tokens.cardShape)
@@ -149,6 +167,65 @@ private fun Viewfinder(modifier: Modifier, main: CameraSource?, others: List<Cam
                     )
                 }
             }
+        }
+        overlay()
+    }
+}
+
+/** C2 촬영 중 표시: REC 타이머·컷 카운터·카운트다운 + 셔터/중지 버튼 (정차 중 화면). */
+@Composable
+private fun BoxScope.CaptureOverlay(
+    progress: CaptureSessionEngine.Progress?,
+    onShutter: () -> Unit,
+    onStop: () -> Unit,
+) {
+    val capturing = progress != null
+    if (progress != null) {
+        Row(
+            Modifier.align(Alignment.TopCenter).padding(16.dp)
+                .background(Tokens.bg.copy(alpha = 0.75f), Tokens.controlShape)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.size(14.dp).background(Tokens.rec, CircleShape))
+            val sec = progress.elapsedMs / 1000
+            Text("%02d:%02d".format(sec / 60, sec % 60), color = Tokens.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, style = Tokens.tabular)
+            Text("컷 ${progress.shotsTaken}/${progress.total}", color = Tokens.text, fontSize = 20.sp, style = Tokens.tabular)
+        }
+        val big = when {
+            progress.phase == CaptureSessionEngine.Phase.ANNOUNCING -> "준비"
+            progress.countdown != null -> progress.countdown.toString()
+            else -> null
+        }
+        if (big != null) {
+            Text(
+                big, color = Tokens.text, fontSize = if (big.length == 1) 160.sp else 56.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Center).background(Tokens.bg.copy(alpha = 0.35f), Tokens.cardShape).padding(horizontal = 40.dp),
+            )
+        }
+    }
+    // 왼쪽 아래: 셔터(차~즈) / 중지
+    Row(
+        Modifier.align(Alignment.BottomStart).padding(20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(
+            Modifier
+                .size(112.dp)
+                .background(if (capturing) Tokens.rec else Tokens.accent, CircleShape)
+                .border(4.dp, Tokens.text.copy(alpha = 0.85f), CircleShape)
+                .clickable(onClick = if (capturing) onStop else onShutter),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(if (capturing) "중지" else "차~즈", color = Tokens.text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        }
+        if (!capturing) {
+            Text(
+                "12초 · 4컷", color = Tokens.text, fontSize = 18.sp,
+                modifier = Modifier.background(Tokens.bg.copy(alpha = 0.7f), Tokens.controlShape).padding(horizontal = 14.dp, vertical = 8.dp),
+            )
         }
     }
 }

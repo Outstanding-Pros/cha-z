@@ -8,7 +8,9 @@ import android.view.View
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import android.os.SystemClock
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
@@ -19,6 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -39,6 +42,14 @@ class CameraXSource(
     private val imageCapture = ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
         .build()
+    /** 클립 스냅샷용 최신 프레임. 매 프레임 변환은 비싸서 250ms 마다만 갱신한다. */
+    private val analysis = ImageAnalysis.Builder()
+        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+        .build()
+    @Volatile private var latest: Bitmap? = null
+    @Volatile private var latestAt = 0L
+    private val analysisExecutor = Executors.newSingleThreadExecutor()
     private var provider: ProcessCameraProvider? = null
     private var previewView: PreviewView? = null
 
@@ -53,8 +64,23 @@ class CameraXSource(
         future.addListener({
             val p = future.get()
             try {
-                p.unbind(preview, imageCapture)
-                p.bindToLifecycle(ProcessLifecycleOwner.get(), selector, preview, imageCapture)
+                p.unbind(preview, imageCapture, analysis)
+                analysis.setAnalyzer(analysisExecutor) { image ->
+                    image.use {
+                        val now = SystemClock.uptimeMillis()
+                        if (now - latestAt >= 250) {
+                            latest = it.toBitmap().rotate(it.imageInfo.rotationDegrees)
+                            latestAt = now
+                        }
+                    }
+                }
+                try {
+                    p.bindToLifecycle(ProcessLifecycleOwner.get(), selector, preview, imageCapture, analysis)
+                } catch (e: IllegalArgumentException) {
+                    // 3개 동시 사용을 지원하지 않는 카메라면 분석 없이 (스냅샷은 스틸로 대신)
+                    Log.w(TAG, "ImageAnalysis 없이 바인딩: ${e.message}")
+                    p.bindToLifecycle(ProcessLifecycleOwner.get(), selector, preview, imageCapture)
+                }
                 provider = p
                 previewView?.let { preview.surfaceProvider = it.surfaceProvider }
             } catch (e: Exception) {
@@ -64,7 +90,7 @@ class CameraXSource(
     }
 
     override fun stop() {
-        provider?.unbind(preview, imageCapture)
+        provider?.unbind(preview, imageCapture, analysis)
         provider = null
     }
 
@@ -100,6 +126,11 @@ class CameraXSource(
                 }
             })
         }
+    }
+
+    override suspend fun snapshot(): Bitmap? {
+        start()
+        return latest
     }
 
     private fun Bitmap.rotate(degrees: Int): Bitmap =

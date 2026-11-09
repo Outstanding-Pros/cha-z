@@ -1,0 +1,137 @@
+package ai.chaz.capture
+
+import ai.chaz.data.CaptureConfig
+import ai.chaz.data.Clip
+import ai.chaz.data.Cut
+import ai.chaz.data.Frame
+import ai.chaz.data.Session
+import ai.chaz.data.TriggerSource
+import ai.chaz.voice.FakeCuePlayer
+import ai.chaz.voice.FakeSpeechOutput
+import ai.chaz.voice.PlainTtsPhrases
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class CaptureSessionEngineTest {
+
+    /** 비트맵 없이 호출만 기록하는 저장소. */
+    private class RecordingStore(private val now: () -> Long) : SessionStore {
+        val cutTimes = mutableListOf<Long>()
+        val clipFrames = mutableMapOf<CameraRole, Int>()
+        var finished: Triple<List<Cut>, List<Clip>, Boolean>? = null
+        override fun begin(session: Session) = Unit
+        override suspend fun saveCut(session: Session, index: Int, tMs: Long, sources: List<CameraSource>): Cut {
+            cutTimes += tMs
+            return Cut(session.id, index, tMs, sources.map { Frame(it.role, "cut$index-${it.role}", it.kind) })
+        }
+        override suspend fun saveClipFrame(session: Session, source: CameraSource, seq: Int): Boolean {
+            clipFrames[source.role] = (clipFrames[source.role] ?: 0) + 1
+            return true
+        }
+        override fun clipPath(session: Session, role: CameraRole) = "clips/$role"
+        override suspend fun finish(session: Session, cuts: List<Cut>, clips: List<Clip>, stopped: Boolean) {
+            finished = Triple(cuts, clips, stopped)
+        }
+    }
+
+    private val sources = listOf(
+        FakeCameraSource(CameraRole.INTERIOR),
+        FakeCameraSource(CameraRole.FRONT, SourceKind.RECORDED_VIDEO),
+        FakeCameraSource(CameraRole.REAR, SourceKind.RECORDED_VIDEO),
+    )
+
+    private fun TestScope.setup(introMs: Long = 2_000): Triple<CaptureSessionEngine, RecordingStore, Pair<FakeSpeechOutput, FakeCuePlayer>> {
+        val now = { testScheduler.currentTime }
+        val store = RecordingStore(now)
+        val cueLog = mutableListOf<String>()
+        val cues = object : ai.chaz.voice.CuePlayer {
+            override fun countdown(n: Int) { cueLog += "${now()}:cd$n" }
+            override fun shutter() { cueLog += "${now()}:shutter" }
+        }
+        val speech = object : ai.chaz.voice.SpeechOutput {
+            override val name = "fake"
+            val spoken = mutableListOf<String>()
+            override suspend fun speak(text: String) { spoken += text; delay(introMs) }
+            override fun stop() = Unit
+        }
+        val engine = CaptureSessionEngine(speech, cues, store, PlainTtsPhrases, now)
+        cuesLog = cueLog
+        speechLog = speech.spoken
+        return Triple(engine, store, FakeSpeechOutput() to FakeCuePlayer())
+    }
+
+    private var cuesLog: List<String> = emptyList()
+    private var speechLog: List<String> = emptyList()
+
+    private fun session(config: CaptureConfig = CaptureConfig()) = Session("s1", 0, config, TriggerSource.SHUTTER_BUTTON)
+
+    @Test fun `12초 4컷 - 3초 간격으로 컷마다 세 소스, 카운트다운 셋둘하나 후 셔터`() = runTest {
+        val (engine, store) = setup(introMs = 2_000)
+        val result = engine.run(session(), sources, adjusted = false, isDriving = { false })
+
+        assertFalse(result.stopped)
+        assertEquals(4, result.cuts.size)
+        assertEquals(listOf(3_000L, 6_000L, 9_000L, 12_000L), store.cutTimes)
+        assertTrue(result.cuts.all { c -> c.frames.map { it.role } == listOf(CameraRole.INTERIOR, CameraRole.FRONT, CameraRole.REAR) })
+
+        // 시작 안내(2초) 뒤 t0 = 2000. 첫 컷 5000 직전 2700/1800/900ms 에 카운트다운
+        assertEquals(listOf("2300:cd3", "3200:cd2", "4100:cd1", "5000:shutter"), cuesLog.take(4))
+        assertEquals(16, cuesLog.size)
+
+        // 클립: 0.5초 간격, 12.5초 → 소스당 약 25장
+        sources.forEach { assertTrue("${it.role} ${store.clipFrames[it.role]}", (store.clipFrames[it.role] ?: 0) in 24..27) }
+        assertEquals(listOf("start 12s 4", "done-parked"), speechLog)
+        assertEquals(3, store.finished!!.second.size)
+    }
+
+    @Test fun `주행 중에 끝나면 주행용 종료 안내`() = runTest {
+        val (engine) = setup()
+        engine.run(session(), sources, adjusted = false, isDriving = { true })
+        assertEquals("done-driving", speechLog.last())
+    }
+
+    @Test fun `간격 2초면 카운트다운은 둘 하나`() = runTest {
+        val (engine) = setup(introMs = 0)
+        engine.run(session(CaptureConfig(durationSec = 8, count = 4)), sources, adjusted = false, isDriving = { false })
+        assertEquals(listOf("200:cd2", "1100:cd1", "2000:shutter"), cuesLog.take(3))
+        assertFalse(cuesLog.any { it.endsWith("cd3") })
+    }
+
+    @Test fun `중지하면 찍은 컷까지 저장하고 멈춤 안내`() = runTest {
+        val (engine, store) = setup(introMs = 0)
+        var result: CaptureSessionEngine.Result? = null
+        val job = launch { result = engine.run(session(), sources, adjusted = false, isDriving = { false }) }
+        delay(7_000)
+        engine.stop()
+        job.join()
+        assertTrue(result!!.stopped)
+        assertEquals(2, result!!.cuts.size)
+        assertTrue(store.finished!!.third)
+        assertEquals("stopped", speechLog.last())
+    }
+
+    @Test fun `설정을 맞췄으면 조정 안내로 시작`() = runTest {
+        val (engine) = setup(introMs = 0)
+        engine.run(session(CaptureConfig(40, 20)), sources, adjusted = true, isDriving = { false })
+        assertEquals("adjusted 40s 20", speechLog.first())
+    }
+
+    @Test fun `안내 음성이 실패해도 촬영은 계속`() = runTest {
+        val now = { testScheduler.currentTime }
+        val store = RecordingStore(now)
+        val broken = object : ai.chaz.voice.SpeechOutput {
+            override val name = "broken"
+            override suspend fun speak(text: String) = error("TTS 엔진 없음")
+            override fun stop() = Unit
+        }
+        val result = CaptureSessionEngine(broken, FakeCuePlayer(), store, PlainTtsPhrases, now)
+            .run(session(), sources, adjusted = false, isDriving = { false })
+        assertEquals(4, result.cuts.size)
+    }
+}

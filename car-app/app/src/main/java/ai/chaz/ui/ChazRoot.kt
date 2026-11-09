@@ -5,6 +5,9 @@ import ai.chaz.platform.driving.DrivingGateHub
 import ai.chaz.ui.settings.SettingsScreen
 import ai.chaz.ui.spike.SpikeScreen
 import ai.chaz.ui.standby.StandbyScreen
+import ai.chaz.ui.result.ResultScreen
+import ai.chaz.state.AppState
+import ai.chaz.data.TriggerSource
 import ai.chaz.ui.theme.Tokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,19 +41,28 @@ enum class Tab(val label: String, val ready: Boolean) {
 fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val driving by graph.driving.status.collectAsState()
+    val model by graph.capture.model.collectAsState()
+    val state = model.state
+    val (line1, line2) = when (state) {
+        is AppState.Capturing -> "촬영 중 · ${state.session.config.count}컷 중 ${state.shotsTaken}" to "창밖과 함께 웃어 주세요"
+        is AppState.Saved -> "저장했어요" to "정차 후 편집하거나 '차즈 스마트폰에서 편집할게'라고 말해 주세요"
+        else -> "촬영 대기" to "'차~즈'라고 말하면 찍어요"
+    }
 
     Box(Modifier.fillMaxSize().background(Tokens.bg)) {
         DrivingLockOverlay(
             hub = graph.driving,
-            line1 = "촬영 대기",
-            line2 = "'차~즈'라고 말하면 찍어요",
-            onVoice = { /* T07: SpeechInput 시작 */ },
+            line1 = line1,
+            line2 = line2,
+            // TODO(T07): 음성 버튼 → SpeechInput. 지금은 기본 촬영(12초 4컷)으로 바로 연결
+            onVoice = { graph.capture.start(TriggerSource.VOICE_BUTTON) },
+            action = if (state is AppState.Capturing) "중지" to { graph.capture.stop() } else null,
         ) {
             Row(Modifier.fillMaxSize()) {
                 LeftRail(tab) { tab = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when (tab) {
-                        Tab.HOME -> StandbyScreen(graph)
+                        Tab.HOME -> if (state is AppState.Editing) ResultScreen(graph) else StandbyScreen(graph)
                         Tab.SETTINGS -> SettingsScreen(graph)
                         Tab.SPIKE -> SpikeScreen(graph)
                         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

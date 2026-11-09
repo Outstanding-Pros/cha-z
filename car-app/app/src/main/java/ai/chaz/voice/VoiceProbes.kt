@@ -22,7 +22,7 @@ import android.speech.tts.TextToSpeech as AndroidTts
 object VoiceProbes {
 
     /** Pleos TextToSpeech SDK: initialize() 성공 여부. 인스턴스는 판정 후 release. */
-    suspend fun probePleosTts(context: Context, mode: TtsMode = TtsMode.HYBRID): ProbeResult =
+    suspend fun probePleosTts(context: Context, mode: TtsMode = TtsMode.ON_DEVICE): ProbeResult =
         withContext(Dispatchers.Main) {
             val tts = PleosTts(context.applicationContext, mode)
             val done = CompletableDeferred<ProbeResult>()

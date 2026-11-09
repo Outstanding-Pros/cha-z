@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 모든 음성 안내 문구는 여기 한 곳에 둔다 (SPEC 'TTS 문구 관리'). 한 문장, 3초 이내. -->
+<resources>
+    <!-- %1$s = "12초" / "1분", %2$d = 컷 수 -->
+    <string name="tts_capture_start">%1$s 동안 %2$d컷 찍을게요. 창밖과 함께 웃어 주세요.</string>
+    <string name="tts_capture_adjusted">%1$s 동안 %2$d컷으로 맞췄어요.</string>
+    <string name="tts_done_driving">다 찍었어요. 정차하면 편집할 수 있어요.</string>
+    <string name="tts_done_parked">편집 화면으로 갈게요.</string>
+    <string name="tts_stopped">촬영을 멈췄어요.</string>
+    <string name="tts_retake">다시 찍을게요.</string>
+</resources>

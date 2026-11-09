@@ -49,6 +49,8 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - `SERVER`: `Client credentials missing` → `onError UNKNOWN`. `HYBRID`/`ON_DEVICE`: 온디바이스 ko_KR 인식 루프 동작 확인(`recognize ... cnt=70`). 무발화라 최종 결과는 미확인 → **사용자 발화로 확인 필요**.
 - 호출어: `RecognitionResult.isWakeUpWord`, `WakeUpWordConfig` 타입은 있으나 커스텀 호출어 등록 API는 미확인. TODO(pleos-api).
 
+- T06 실사용: 시작 안내 "12초 동안 4컷 찍을게요. 창밖과 함께 웃어 주세요." ON_DEVICE 합성·재생 3.8초, 종료 안내 1.7초.
+
 ### Android 플랫폼 음성
 - Android `TextToSpeech`: 초기화 실패(status=-1, 기본 엔진 없음).
 - `SpeechRecognizer.isRecognitionAvailable()` = true 이지만 11/8 실측에서 `ERROR 11`(서버 연결 끊김). → Pleos STT 실패 시 비즈라우터 전사로 넘어가야 함(런타임 3회 실패 페일오버).

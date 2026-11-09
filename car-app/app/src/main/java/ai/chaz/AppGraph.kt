@@ -1,6 +1,22 @@
 package ai.chaz
 
 import ai.chaz.capture.CameraSource
+import ai.chaz.capture.CaptureController
+import ai.chaz.capture.CaptureSessionEngine
+import ai.chaz.capture.FileSessionStore
+import ai.chaz.data.CaptureConfig
+import ai.chaz.data.Session
+import ai.chaz.state.AppEvent
+import ai.chaz.state.AppStateMachine
+import ai.chaz.voice.AudioFocus
+import ai.chaz.voice.PleosSpeechOutput
+import ai.chaz.voice.ResourceTtsPhrases
+import ai.chaz.voice.ServerSpeechOutput
+import ai.chaz.voice.SoundPoolCuePlayer
+import ai.chaz.voice.SpeechOutputRouter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import ai.chaz.capture.CameraSourceFactory
 import ai.chaz.platform.CapabilityProbe
 import ai.chaz.platform.Feature
@@ -40,11 +56,40 @@ class AppGraph(context: Context) {
     /** 현재 선택된 카메라 소스 (실내·전방·후방). 판정이 끝날 때마다 다시 만든다. */
     val cameras: StateFlow<List<CameraSource>> = _cameras.asStateFlow()
 
+    // 음성 안내: SdkAvailability 선택(Pleos TTS → 비즈라우터) + 카운트다운 클립
+    private val audioFocus = AudioFocus(appContext)
+    private val serverSpeech = ServerSpeechOutput(appContext, BuildConfig.CHAZ_SERVER_URL, audioFocus)
+    val speech = SpeechOutputRouter(
+        availability, probe,
+        impls = mapOf(
+            ProbeChains.Ids.TTS_PLEOS to PleosSpeechOutput(appContext, audioFocus),
+            ProbeChains.Ids.TTS_BIZROUTER to serverSpeech,
+        ),
+        fallback = serverSpeech,
+    )
+    private val phrases = ResourceTtsPhrases(appContext)
+    private val cues by lazy { SoundPoolCuePlayer(appContext) }
+
+    val capture by lazy {
+        CaptureController(
+            scope = scope,
+            machine = AppStateMachine { trigger, config ->
+                Session(newSessionId(), System.currentTimeMillis(), config, trigger)
+            },
+            engine = CaptureSessionEngine(speech, cues, FileSessionStore(appContext), phrases),
+            sources = { _cameras.value },
+            isDriving = { driving.restricted.value },
+        )
+    }
+
     private val _probing = MutableStateFlow(false)
     val probing: StateFlow<Boolean> = _probing.asStateFlow()
 
     fun start() {
         reprobe()
+        scope.launch {
+            driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
+        }
         scope.launch {
             driving.status.collect { android.util.Log.i("ChazDriving", "restricted=${it.restricted} source=${it.source} detail=${it.detail} override=${it.override}") }
         }
@@ -61,6 +106,8 @@ class AppGraph(context: Context) {
                 withContext(Dispatchers.Default) { probe.probeAll() }
                 attachDrivingGate()
                 rebuildCameras()
+                // 기본 안내 문구를 미리 준비 (Pleos 는 모델 로딩, 비즈라우터는 사전 합성)
+                speech.prepare(listOf(phrases.captureStart(CaptureConfig()), phrases.doneParked(), phrases.doneDriving()))
             } finally {
                 _probing.value = false
             }
@@ -78,6 +125,9 @@ class AppGraph(context: Context) {
         _cameras.value = fresh
         android.util.Log.i("ChazCamera", "소스: " + fresh.joinToString { "${it.role}=${it.label}" })
     }
+
+    private fun newSessionId(): String =
+        SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + "-" + (1000..9999).random()
 
     private fun attachDrivingGate() {
         val gate: DrivingGate = when (availability.selectedId(Feature.DRIVING_GATE)) {

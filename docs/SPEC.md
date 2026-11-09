@@ -106,6 +106,7 @@ sealed interface AppState {
 }
 sealed interface AppEvent {
     data class Trigger(val source: TriggerSource, val config: CaptureConfig) : AppEvent // T1~T4
+    data class ShotTaken(val shotsTaken: Int) : AppEvent // > 변경(11/9): 컷 카운터 갱신용 추가
     object SessionFinished : AppEvent
     data class DrivingChanged(val restricted: Boolean) : AppEvent // DrivingGate
     object HandoffRequested : AppEvent
@@ -167,6 +168,8 @@ F1 촬영 세션이 핵심. F2는 F1을 시작시키고, F3·F4는 분위기, F5
 
 - 폰 실내 카메라: 차량이 Realtime으로 `capture.shot`(컷 번호, 시각)을 보내면 폰이 촬영해 업로드. 지연 0.3~1초를 카운트다운에 흡수하도록 폰에는 0.5초 일찍 보낸다.
 - 영상: 사용 가능한 소스마다 녹화. 동시 녹화가 안 되면 실내는 녹화, 외부는 0.5초 간격 스냅샷 시퀀스.
+  > 변경(11/9, T06): 에뮬레이터는 동시 오픈이 안 되고 외부가 시뮬레이션이라 **모든 소스를 0.5초 간격 스냅샷 시퀀스**(`clips/{role}/0000.jpg…`)로 저장한다. 영상 파일 변환은 MediaComposer(T14). 실내 VideoCapture 녹화는 실차 카메라 확인 후.
+- 카운트다운: "셋, 둘, 하나"는 실시간 TTS 대신 미리 만든 클립(`assets/tts/cd_*.mp3`, 약 0.9초)을 컷 시각 2.7/1.8/0.9초 전에 재생한다. 셔터음은 시스템 `MediaActionSound`.
 - 스틸은 CameraX ImageCapture, 안 되면 녹화 영상에서 `MediaMetadataRetriever.getFrameAtTime()`.
 - 녹화 중 마이크 오디오는 기본 끔(저작권·프라이버시). 설정에서 켤 수 있다.
 

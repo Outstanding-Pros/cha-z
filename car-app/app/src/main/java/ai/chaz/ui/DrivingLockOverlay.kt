@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
@@ -32,6 +33,8 @@ fun DrivingLockOverlay(
     line1: String,
     line2: String,
     onVoice: () -> Unit,
+    /** 촬영 중 '중지' 같은 한 번 누르는 버튼 (다단계 터치 금지). */
+    action: Pair<String, () -> Unit>? = null,
     parkedContent: @Composable () -> Unit,
 ) {
     val restricted by hub.restricted.collectAsState()
@@ -54,6 +57,15 @@ fun DrivingLockOverlay(
             Text(line1, color = Tokens.text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(10.dp))
             Text(line2, color = Tokens.text2, fontSize = 22.sp)
+            if (action != null) {
+                Spacer(Modifier.height(32.dp))
+                Box(
+                    Modifier
+                        .background(Tokens.rec, Tokens.controlShape)
+                        .clickable(onClick = action.second)
+                        .padding(horizontal = 40.dp, vertical = 20.dp),
+                ) { Text(action.first, color = Tokens.text, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+            }
         }
     }
 }

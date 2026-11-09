@@ -29,8 +29,11 @@ interface CameraSource {
     fun createPreview(context: Context, owner: LifecycleOwner): View
     fun releasePreview(view: View)
 
-    /** 지금 시각의 프레임 한 장. */
+    /** 지금 시각의 고해상도 스틸 (컷용). */
     suspend fun capture(): Bitmap
+
+    /** 지금 시각의 저해상 프레임 (클립 스냅샷 시퀀스용, 빠르게). 아직 프레임이 없으면 null. */
+    suspend fun snapshot(): Bitmap?
 }
 
 /** 테스트·미리보기용. 단색 비트맵을 돌려준다. */
@@ -53,4 +56,5 @@ class FakeCameraSource(
         captures++
         return Bitmap.createBitmap(16, 9, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
     }
+    override suspend fun snapshot(): Bitmap? = capture()
 }
