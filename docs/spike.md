@@ -87,6 +87,12 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - 주행 전환(개발용 오버라이드) → 미리보기 수집 중단까지 75ms, 정차 복귀 → 재시작 0.1초.
 - 개발용 주행 전환: `adb shell am start --user 10 -f 0x20000000 -n ai.chaz/.MainActivity --es drive on|off|auto`
 
+### T10 폰 전송 실측 (로컬 서버)
+- 시뮬레이터 폰(Python)으로 확인: QR 클레임 → 차량 화면 자동 '연결됨 · 폰 1대' → 주행 중 "차즈" 촬영(Saved, 편집 잠금) → "차즈 폰으로 보내줘" → 기본 레이아웃(L2) 자동 합성·업로드 → 폰 SSE `result.delivered` → 서명 URL 로 1200x2486 JPEG 수신. TTS "완성본을 폰으로 보냈어요."
+- 서명 URL 변조 → 403, 이미 연결된 QR 을 다른 폰이 쓰면 409.
+- 서버가 알려 주는 QR 주소는 PC 의 기본 경로 IP(이 PC 는 <PC 공인 IP>). 다르면 `PUBLIC_BASE_URL` 로 지정.
+- **실제 폰 브라우저 테스트는 사용자 확인 필요** (방화벽·같은 네트워크). http 라 Web Share·서비스 워커는 꺼지고 다운로드·공유 링크로 대신.
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 

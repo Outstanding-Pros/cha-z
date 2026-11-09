@@ -11,8 +11,8 @@
 |---|---|
 | `car-app/` | 차량 앱 (Android, Kotlin, Jetpack Compose) |
 | `server/` | 로컬 개발 서버 (FastAPI) — 비즈라우터 AI 이미지·TTS·STT 중계. 키는 서버에만 |
-| `companion-web/` | 동승자 폰 PWA (예정) |
-| `supabase/` | 백엔드 스키마·Edge Functions (예정) |
+| `companion-web/` | 동승자 폰 PWA (서버가 `/app/` 으로 서빙) |
+| `supabase/` | 백엔드 스키마·Edge Functions (이후 — 1차는 로컬 서버가 대신) |
 | `assets/` | BGM·TTS 클립·프레임·외부 카메라 목 영상 |
 | `docs/` | 사양서 `SPEC.md`, 실측 결과 `spike.md` |
 
@@ -34,6 +34,8 @@
    ```
    `local.properties.example` 참고 (기본 서버 주소 `http://10.0.2.2:8787`).
 3. 에뮬레이터 마이크: `adb emu avd hostmicon`
+4. 폰 연결: 차량 앱 설정 → '폰 연결' → QR 띄우기 → 동승자 폰 카메라로 스캔 (폰과 PC 가 같은 Wi-Fi, Windows 방화벽에서 8787 허용).
+   폰에서 받은 사진을 저장하거나 7일 공유 링크를 만들 수 있습니다. 주행 중에는 QR 을 보여 주지 않고, "차즈 폰으로 보내줘"로 보냅니다.
 
 ## SDK 가용성과 어댑터 구조
 
@@ -72,4 +74,5 @@
 - [x] T07 음성 체인 (호출어 '차즈', 규칙 파서 + LLM 폴백, Pleos STT/TTS)
 - [x] T08 인물 분리(MediaPipe) + L1 차창 합성 · L2 컷형 프레임, 갤러리 저장
 - [x] T09 정차 중 라이브 미리보기 (L1·L2 합성 + 색 필터, 주행 전환 시 즉시 중단)
-- [ ] T10 폰 전송
+- [x] T10 폰 연결·전송 (QR 페어링, 완성본 업로드, 폰 PWA 실시간 수신·저장·공유 링크) — 로컬 서버
+- [ ] T11 폰 실내 카메라 · T12 스팟 가이드 · T13 앰비언트 · T14 L3·L4

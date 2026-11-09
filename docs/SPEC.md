@@ -357,6 +357,10 @@ portrait에서는 뷰파인더 위, 하단 패널 아래, 오른쪽 카드 2개�
 
 ## 데이터 모델과 API
 
+> 변경(11/9, T10 — 사용자 결정 "로컬 서버로 일단 진행"): 1차는 Supabase 대신 **로컬 서버(server/app/sync.py)** 가 같은 역할을 한다.
+> SQLite(devices·pairings·results·shares), Edge Function 과 같은 이름의 엔드포인트(`/sync/pairing-create`, `/sync/pairing-claim`, `/sync/results`=deliver, `/sync/share`=share-link), Realtime 채널 대신 SSE(`/sync/events?deviceId=`), Storage signed URL 대신 HMAC 서명·만료 URL.
+> 폰 PWA 는 Next.js 대신 서버가 `/app/` 으로 서빙하는 의존성 없는 정적 PWA(`companion-web/public`). 폰과 PC 가 같은 네트워크여야 한다. 차량 업로드는 아직 즉시 전송(WorkManager 큐·Room 은 이후).
+
 백엔드는 Supabase(Postgres, Storage, Realtime, Edge Functions). 차량 앱은 로컬 Room DB에 먼저 저장하고 WorkManager 큐로 업로드. 네트워크가 끊겨도 촬영과 차량 편집은 동작.
 
 ```kotlin
