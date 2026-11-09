@@ -2,6 +2,7 @@ package ai.chaz.platform
 
 import ai.chaz.capture.CameraInventory
 import ai.chaz.capture.CameraRole
+import ai.chaz.media.MediaPipePersonSegmenter
 import ai.chaz.platform.driving.CarUxDrivingGate
 import ai.chaz.platform.driving.VehicleGearDrivingGate
 import ai.chaz.platform.navi.NaviProbes
@@ -43,6 +44,9 @@ object ProbeChains {
         const val EXTERIOR_RECORDED = "fallback.recorded-video"
         const val INTERIOR_VEHICLE = "vehicle.camera.interior"
         const val INTERIOR_WEBCAM = "emulator.webcam"
+
+        const val SEGMENTER_MEDIAPIPE = "mediapipe.segmenter"
+        const val VEHICLE_PLEOS = "pleos.vehicle.state"
     }
 
     fun build(context: Context, hub: PleosVehicleHub, server: ChazServer): Map<Feature, List<Candidate>> {
@@ -64,7 +68,7 @@ object ProbeChains {
                 Candidate(Ids.DRIVING_DEBUG, "개발용 디버그 토글", Tier.FALLBACK) { ProbeResult.Ok("항상 사용 가능") },
             ),
             Feature.VEHICLE_STATE to listOf(
-                Candidate("pleos.vehicle.state", "Vehicle SDK", Tier.PLEOS_SDK) { PleosVehicleHub.probeVehicleState(hub) },
+                Candidate(Ids.VEHICLE_PLEOS, "Vehicle SDK", Tier.PLEOS_SDK) { PleosVehicleHub.probeVehicleState(hub) },
                 Candidate("aaos.car-property", "CarPropertyManager", Tier.PLATFORM) { ProbeResult.Pending("Vehicle SDK 실패 시 T13에서 구현") },
                 Candidate("fallback.hidden", "표시 생략", Tier.FALLBACK) { ProbeResult.Ok("스탬프에서 차량 데이터 생략") },
             ),
@@ -129,8 +133,8 @@ object ProbeChains {
                 Candidate("bizrouter.image-gen", "비즈라우터 이미지 생성", Tier.BIZROUTER) { bizrouter() },
             ),
             Feature.PERSON_SEGMENTER to listOf(
-                Candidate("mediapipe.segmenter", "MediaPipe Image Segmenter", Tier.PLATFORM) { ProbeResult.Pending("T08에서 포함") },
-                Candidate("bizrouter.image-edit", "비즈라우터 이미지 편집", Tier.BIZROUTER) { bizrouter() },
+                Candidate(Ids.SEGMENTER_MEDIAPIPE, "MediaPipe Image Segmenter", Tier.PLATFORM) { MediaPipePersonSegmenter.probe(ctx) },
+                Candidate("bizrouter.image-edit", "비즈라우터 이미지 편집", Tier.BIZROUTER) { ProbeResult.Pending("T16") },
             ),
             Feature.SPOTS to listOf(
                 Candidate("overpass.tourapi", "Overpass + TourAPI", Tier.PLATFORM) { ProbeResult.Pending("T12") },

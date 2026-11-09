@@ -1,0 +1,11 @@
+{
+  "note": "에뮬레이터 카메라 #0 (대시보드에서 뒤를 보는 실내 장면) 창문 사각형. 좌표는 imageWidth x imageHeight 기준, 시계 방향(좌상→우상→우하→좌하). source: 창에 넣을 외부 카메라",
+  "imageWidth": 1376,
+  "imageHeight": 768,
+  "windows": [
+    { "name": "left",  "source": "FRONT", "quad": [[0, 200], [250, 183], [192, 425], [0, 468]] },
+    { "name": "rear-left", "source": "FRONT", "quad": [[296, 236], [372, 212], [372, 300], [292, 318]] },
+    { "name": "rear",  "source": "REAR",  "quad": [[505, 245], [872, 240], [872, 284], [505, 284]] },
+    { "name": "right", "source": "FRONT", "quad": [[1160, 190], [1376, 176], [1376, 440], [1172, 402]] }
+  ]
+}

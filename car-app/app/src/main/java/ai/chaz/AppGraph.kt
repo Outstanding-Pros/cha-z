@@ -1,6 +1,19 @@
 package ai.chaz
 
+import ai.chaz.capture.CameraRole
 import ai.chaz.capture.CameraSource
+import ai.chaz.capture.CameraXSource
+import ai.chaz.media.CutFrameRenderer
+import ai.chaz.media.FakePersonSegmenter
+import ai.chaz.media.Layout
+import ai.chaz.media.MediaPipePersonSegmenter
+import ai.chaz.media.PersonSegmenter
+import ai.chaz.media.ResultComposer
+import ai.chaz.media.WindowMask
+import ai.chaz.media.WindowSwapRenderer
+import ai.chaz.platform.vehicle.FakeVehicleStateProvider
+import ai.chaz.platform.vehicle.PleosVehicleStateProvider
+import ai.chaz.platform.vehicle.VehicleStateProvider
 import ai.chaz.capture.CaptureController
 import ai.chaz.capture.CaptureSessionEngine
 import ai.chaz.capture.FileSessionStore
@@ -117,6 +130,36 @@ class AppGraph(context: Context) {
             phrases = phrases,
             llm = { intentClient.classify(it) },
         )
+    }
+
+    // 편집·합성 (T08): 인물 분리(MediaPipe) + L1·L2 렌더러
+    // 판정이 끝난 뒤의 선택을 매번 읽는다 (lazy 로 굳히면 판정 전 값에 묶일 수 있음)
+    private val mediapipe by lazy { MediaPipePersonSegmenter(appContext) }
+    private val noSegmenter = FakePersonSegmenter()
+    private val segmenter: PersonSegmenter
+        get() = if (availability.selectedId(Feature.PERSON_SEGMENTER) == ProbeChains.Ids.SEGMENTER_MEDIAPIPE) mediapipe else noSegmenter
+    private val pleosVehicleState by lazy { PleosVehicleStateProvider(vehicleHub) }
+    private val vehicleState: VehicleStateProvider
+        get() = if (availability.selectedId(Feature.VEHICLE_STATE) == ProbeChains.Ids.VEHICLE_PLEOS) pleosVehicleState else FakeVehicleStateProvider()
+    val composer by lazy {
+        val seg = object : PersonSegmenter {
+            override val name get() = segmenter.name
+            override suspend fun segment(image: android.graphics.Bitmap) = segmenter.segment(image)
+        }
+        ResultComposer(
+            appContext,
+            renderers = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(seg), Layout.CUT_FRAME to CutFrameRenderer(seg)),
+            vehicle = { vehicleState },
+            windowMask = { currentWindowMask() },
+        )
+    }
+
+    /** 실내 카메라 위치가 고정이면 정적 창문 마스크 (assets/masks/{cameraId}_windows.json). */
+    private fun currentWindowMask(): WindowMask? {
+        val interior = _cameras.value.firstOrNull { it.role == CameraRole.INTERIOR } as? CameraXSource ?: return null
+        return runCatching {
+            appContext.assets.open("masks/${interior.cameraId}_windows.json").bufferedReader().use { WindowMask.parse(it.readText()) }
+        }.getOrNull()
     }
 
     @Volatile private var foreground = false

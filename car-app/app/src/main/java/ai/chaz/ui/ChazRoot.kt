@@ -5,7 +5,7 @@ import ai.chaz.platform.driving.DrivingGateHub
 import ai.chaz.ui.settings.SettingsScreen
 import ai.chaz.ui.spike.SpikeScreen
 import ai.chaz.ui.standby.StandbyScreen
-import ai.chaz.ui.result.ResultScreen
+import ai.chaz.ui.edit.EditScreen
 import ai.chaz.state.AppState
 import ai.chaz.data.TriggerSource
 import ai.chaz.ui.theme.Tokens
@@ -63,7 +63,7 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
                 LeftRail(tab) { tab = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when (tab) {
-                        Tab.HOME -> if (state is AppState.Editing) ResultScreen(graph) else StandbyScreen(graph)
+                        Tab.HOME -> if (state is AppState.Editing) EditScreen(graph) else StandbyScreen(graph)
                         Tab.SETTINGS -> SettingsScreen(graph)
                         Tab.SPIKE -> SpikeScreen(graph)
                         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

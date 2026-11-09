@@ -8,6 +8,7 @@ activityCompose = "1.13.0"
 lifecycle = "2.10.0"
 junit = "4.13.2"
 camerax = "1.6.2"
+mediapipe = "1.2.1"
 # Pleos Playground SDK — https://nexus-playground.pleos.ai/repository/maven-releases/
 pleosVehicle = "2.3.2"
 pleosNaviHelper = "3.0.5"
@@ -31,6 +32,7 @@ camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = 
 camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipe" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 pleos-vehicle = { group = "ai.pleos.playground", name = "Vehicle", version.ref = "pleosVehicle" }
 pleos-navihelper = { group = "ai.pleos.playground", name = "NaviHelper", version.ref = "pleosNaviHelper" }

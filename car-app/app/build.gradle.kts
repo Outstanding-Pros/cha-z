@@ -27,6 +27,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 로컬 개발 서버(Edge Function 대체). 에뮬레이터에서 호스트 PC = 10.0.2.2
+        // 실차(arm64)와 에뮬레이터(x86_64)만 — MediaPipe 네이티브 라이브러리 용량을 줄인다
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+
         buildConfigField("String", "CHAZ_SERVER_URL", "\"${localProp("CHAZ_SERVER_URL", "http://10.0.2.2:8787")}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${localProp("SUPABASE_URL", "")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProp("SUPABASE_ANON_KEY", "")}\"")
@@ -41,6 +44,11 @@ android {
 
     // CarUxRestrictionsManager (DrivingGate 1순위)
     useLibrary("android.car")
+
+    // MediaPipe 는 모델을 메모리 매핑하므로 압축하지 않는다
+    androidResources {
+        noCompress += "tflite"
+    }
 
     buildFeatures {
         compose = true
@@ -83,6 +91,7 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+    implementation(libs.mediapipe.tasks.vision)
 
     // Pleos SDK — 어댑터(platform/, voice/) 뒤에서만 참조한다
     implementation(libs.pleos.vehicle)

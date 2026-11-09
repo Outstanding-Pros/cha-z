@@ -76,6 +76,12 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - LLM 폴백(`/intent/parse`): gemini-3.1-flash-lite ~1.1초, gpt-5-nano ~1.7초, gpt-5.4-nano ~1.3초 → flash-lite 선택.
 - adb shell 로 한글 extra 를 넘기면 깨진다 → base64(`say64`)로 주입. 실행 중인 화면에 보내려면 `-f 0x20000000`(SINGLE_TOP).
 
+### T08 인물 분리·합성 실측
+- MediaPipe tasks-vision 1.2.1, x86_64 네이티브 포함 → 에뮬레이터에서 온디바이스 동작.
+- 모델 비교(실내 1376x768): selfie_segmenter 평균 0.33·경계가 화면 전체(좌석·창 포함) / deeplab_v3 경계 흐림 / **selfie_multiclass 인물 윤곽 깨끗**(평균 0.24, 좌석 일부 잡음) → 채택.
+- 함정: JPEG 디코드 비트맵은 `hasAlpha=false` 라 마스크로 투명하게 만든 부분이 검게 그려짐 → `setHasAlpha(true)`. 경로만 `DST_IN` 으로 그리면 경로 밖 변환 이미지가 남음 → 전체 크기 마스크 비트맵으로 `DST_IN`.
+- 디버그 APK 98MB(대부분 MediaPipe·Pleos 네이티브, 비압축 dex). ABI 는 arm64-v8a·x86_64 만 포함.
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 
