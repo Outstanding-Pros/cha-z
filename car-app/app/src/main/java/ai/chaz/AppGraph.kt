@@ -1,5 +1,7 @@
 package ai.chaz
 
+import ai.chaz.capture.CameraSource
+import ai.chaz.capture.CameraSourceFactory
 import ai.chaz.platform.CapabilityProbe
 import ai.chaz.platform.Feature
 import ai.chaz.platform.ProbeChains
@@ -33,6 +35,11 @@ class AppGraph(context: Context) {
     val driving = DrivingGateHub(scope)
     val debugGate = DebugDrivingGate()
 
+    private val cameraFactory = CameraSourceFactory(appContext, availability)
+    private val _cameras = MutableStateFlow<List<CameraSource>>(emptyList())
+    /** 현재 선택된 카메라 소스 (실내·전방·후방). 판정이 끝날 때마다 다시 만든다. */
+    val cameras: StateFlow<List<CameraSource>> = _cameras.asStateFlow()
+
     private val _probing = MutableStateFlow(false)
     val probing: StateFlow<Boolean> = _probing.asStateFlow()
 
@@ -53,10 +60,23 @@ class AppGraph(context: Context) {
                 attachDrivingGate()
                 withContext(Dispatchers.Default) { probe.probeAll() }
                 attachDrivingGate()
+                rebuildCameras()
             } finally {
                 _probing.value = false
             }
         }
+    }
+
+    private fun rebuildCameras() {
+        val old = _cameras.value
+        val fresh = runCatching { cameraFactory.create() }.getOrElse {
+            android.util.Log.w("ChazCamera", "카메라 소스 생성 실패: ${it.message}"); emptyList()
+        }
+        // 같은 구성이면 그대로 둔다 (미리보기가 깜빡이지 않게)
+        if (old.map { it.role to it.label } == fresh.map { it.role to it.label }) return
+        old.forEach { it.stop() }
+        _cameras.value = fresh
+        android.util.Log.i("ChazCamera", "소스: " + fresh.joinToString { "${it.role}=${it.label}" })
     }
 
     private fun attachDrivingGate() {

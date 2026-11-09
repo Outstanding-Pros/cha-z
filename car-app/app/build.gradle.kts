@@ -32,6 +32,13 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProp("SUPABASE_ANON_KEY", "")}\"")
     }
 
+    // 저장소 루트 assets/ (bgm, tts, frames, exterior-mock) 를 앱 assets 로 포함
+    sourceSets {
+        getByName("main") {
+            assets.srcDir("../../assets")
+        }
+    }
+
     // CarUxRestrictionsManager (DrivingGate 1순위)
     useLibrary("android.car")
 
@@ -71,6 +78,11 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
 
     // Pleos SDK — 어댑터(platform/, voice/) 뒤에서만 참조한다
     implementation(libs.pleos.vehicle)

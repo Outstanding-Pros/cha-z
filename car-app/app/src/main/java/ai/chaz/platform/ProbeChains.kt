@@ -38,6 +38,11 @@ object ProbeChains {
         const val WAKE_PLEOS = "pleos.stt.wakeword"
         const val WAKE_VOSK = "vosk.grammar"
         const val WAKE_BUTTON = "fallback.voice-button"
+
+        const val EXTERIOR_VEHICLE = "vehicle.camera.exterior"
+        const val EXTERIOR_RECORDED = "fallback.recorded-video"
+        const val INTERIOR_VEHICLE = "vehicle.camera.interior"
+        const val INTERIOR_WEBCAM = "emulator.webcam"
     }
 
     fun build(context: Context, hub: PleosVehicleHub, server: ChazServer): Map<Feature, List<Candidate>> {
@@ -94,21 +99,21 @@ object ProbeChains {
                 Candidate(Ids.TTS_CLIPS, "미리 녹음한 클립", Tier.FALLBACK) { assetsProbe(ctx, "tts", "녹음 클립") },
             ),
             Feature.CAMERA_EXTERIOR to listOf(
-                Candidate("vehicle.camera.exterior", "차량 전·후방 카메라(Camera2)", Tier.PLATFORM) {
+                Candidate(Ids.EXTERIOR_VEHICLE, "차량 전·후방 카메라(Camera2)", Tier.PLATFORM) {
                     val f = cameras.byRole(CameraRole.FRONT).filter { it.roleSource.startsWith("AUTOMOTIVE") }
                     val r = cameras.byRole(CameraRole.REAR).filter { it.roleSource.startsWith("AUTOMOTIVE") }
                     if (f.isEmpty() && r.isEmpty()) ProbeResult.Fail("AUTOMOTIVE_LOCATION 전·후방 카메라 없음 (전체 ${cameras.cameras.size}대)")
                     else ProbeResult.Ok("전방 ${f.size}, 후방 ${r.size}")
                 },
-                Candidate("fallback.recorded-video", "사전 녹화 주행 영상", Tier.FALLBACK) { assetsProbe(ctx, "exterior-mock", "목 영상") },
+                Candidate(Ids.EXTERIOR_RECORDED, "사전 녹화 주행 영상(시뮬레이션)", Tier.FALLBACK) { assetsProbe(ctx, "exterior-mock", "목 영상") },
             ),
             Feature.CAMERA_INTERIOR to listOf(
-                Candidate("vehicle.camera.interior", "차량 실내 카메라", Tier.PLATFORM) {
+                Candidate(Ids.INTERIOR_VEHICLE, "차량 실내 카메라", Tier.PLATFORM) {
                     val i = cameras.byRole(CameraRole.INTERIOR).filter { it.roleSource.startsWith("AUTOMOTIVE") }
                     if (i.isEmpty()) ProbeResult.Fail("AUTOMOTIVE_LOCATION 실내 카메라 없음") else ProbeResult.Ok("${i.size}대")
                 },
                 Candidate("phone.companion", "폰 컴패니언 카메라(P5)", Tier.FALLBACK) { ProbeResult.Pending("T11 페어링 후 사용") },
-                Candidate("emulator.webcam", "에뮬레이터 웹캠", Tier.PLATFORM) {
+                Candidate(Ids.INTERIOR_WEBCAM, "에뮬레이터 웹캠", Tier.PLATFORM) {
                     val w = cameras.cameras.filter { !it.roleSource.startsWith("AUTOMOTIVE") }
                     if (w.isEmpty()) ProbeResult.Fail("일반 카메라 없음")
                     else ProbeResult.Ok(w.joinToString { "#${it.id} ${it.lensFacing} ${it.maxSize}" })

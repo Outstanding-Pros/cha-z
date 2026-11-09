@@ -26,7 +26,8 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - 카메라 1대: `#0`, `LENS_FACING=FRONT`, JPEG 최대 1376x768. **`AUTOMOTIVE_LOCATION` 키 없음** → 사양대로 LENS_FACING 추정 = 실내(웹캠 후보).
 - `getConcurrentCameraIds()` 빈 목록 → 동시 오픈 불가. 컷 시각 순차 캡처(사양 F1) 필요.
 - 차량 '카메라' 앱은 `ai.umos.car.evs`(서라운드뷰 EVS). `USE_CAR_EVS_CAMERA` 는 signature|privileged → 서드파티 사용 불가.
-- 결론: 전·후방 = `assets/exterior-mock/` 사전 녹화 영상(T05), 실내 = 웹캠 → 폰(P5) → AI 가상 실내 컷. **사무국 문의 필요: 실차 Camera2 노출 여부.**
+- 에뮬레이터 카메라 #0 의 영상은 **운전자가 앉은 차량 실내 가상 장면** → 실내 컷 데모에 그대로 쓸 수 있다 (T05 확인).
+- 결론: 전·후방 = `assets/exterior-mock/` 사전 녹화 영상(T05: AI 생성 대시캠 이미지 2장을 줌·패닝, '시뮬레이션' 표기), 실내 = 웹캠 → 폰(P5) → AI 가상 실내 컷. **사무국 문의 필요: 실차 Camera2 노출 여부.**
 
 ### 마이크
 - `AudioRecord(VOICE_RECOGNITION, 16kHz)` 정상 동작, 2초 32000샘플 수신.
