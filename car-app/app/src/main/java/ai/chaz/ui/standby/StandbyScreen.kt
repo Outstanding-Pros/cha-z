@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /** C1 촬영 대기 (정차 중). 큰 뷰파인더 + 카메라 소스 칩 + 나머지 소스 타일. */
@@ -54,6 +55,7 @@ fun StandbyScreen(graph: AppGraph) {
     val driving by graph.driving.status.collectAsState()
     val sources by graph.cameras.collectAsState()
     val progress by graph.capture.progress.collectAsState()
+    val prefs by graph.previewPrefs.collectAsState()
     var mainRole by rememberSaveable { mutableStateOf(CameraRole.INTERIOR) }
     val main = sources.firstOrNull { it.role == mainRole } ?: sources.firstOrNull()
     val others = sources.filter { it !== main }
@@ -61,7 +63,7 @@ fun StandbyScreen(graph: AppGraph) {
     BoxWithConstraints(Modifier.fillMaxSize().padding(24.dp)) {
         val landscape = maxWidth > maxHeight
         val viewfinder = @Composable { m: Modifier ->
-            Viewfinder(m, main, others, onSelect = { mainRole = it.role }) {
+            Viewfinder(m, main, others, onSelect = { mainRole = it.role }, live = prefs.layout?.let { l -> { mm: Modifier -> LiveComposite(graph, l, prefs.filter, mm) } }, filter = prefs.filter) {
                 CaptureOverlay(
                     progress = progress,
                     onShutter = { graph.capture.start(TriggerSource.SHUTTER_BUTTON) },
@@ -82,6 +84,30 @@ fun StandbyScreen(graph: AppGraph) {
                     }
                 }
                 Box(Modifier.padding(top = 16.dp))
+                Text("미리보기", color = Tokens.text2, fontSize = 13.sp)
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf<ai.chaz.media.Layout?>(null, ai.chaz.media.Layout.WINDOW_SWAP, ai.chaz.media.Layout.CUT_FRAME).forEach { l ->
+                        val ok = l == null || graph.composer.available(l)
+                        ai.chaz.ui.Chip(l?.let { "${it.id} ${it.label}" } ?: "원본", selected = prefs.layout == l) {
+                            if (ok) graph.previewPrefs.value = prefs.copy(layout = l)
+                        }
+                    }
+                }
+                Text("필터", color = Tokens.text2, fontSize = 13.sp)
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ai.chaz.media.ColorPreset.entries.forEach { f ->
+                        ai.chaz.ui.Chip(f.label, selected = prefs.filter == f) { graph.previewPrefs.value = prefs.copy(filter = f) }
+                    }
+                }
+                Box(Modifier.padding(top = 8.dp))
                 ai.chaz.ui.Chip("🎙 음성 명령", selected = false) { graph.voice.voiceButton() }
                 val heard by graph.voice.lastHeard.collectAsState()
                 heard?.let { Text("들은 말: \"$it\"", color = Tokens.text2, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
@@ -115,6 +141,8 @@ private fun Viewfinder(
     main: CameraSource?,
     others: List<CameraSource>,
     onSelect: (CameraSource) -> Unit,
+    live: (@Composable (Modifier) -> Unit)? = null,
+    filter: ai.chaz.media.ColorPreset = ai.chaz.media.ColorPreset.ORIGINAL,
     overlay: @Composable BoxScope.() -> Unit,
 ) {
     Box(
@@ -127,7 +155,12 @@ private fun Viewfinder(
             Text("카메라 판정 중…", color = Tokens.text2, fontSize = 20.sp, modifier = Modifier.align(Alignment.Center))
             return@Box
         }
-        SourcePreview(main, Modifier.fillMaxSize())
+        if (live != null) {
+            live(Modifier.fillMaxSize())
+            overlay()
+            return@Box
+        }
+        SourcePreview(main, Modifier.fillMaxSize(), filter)
         ThirdsGrid(Modifier.fillMaxSize())
 
         // 왼쪽 위: 카메라 소스 칩
@@ -235,7 +268,7 @@ private fun BoxScope.CaptureOverlay(
 }
 
 @Composable
-private fun SourcePreview(source: CameraSource, modifier: Modifier) {
+private fun SourcePreview(source: CameraSource, modifier: Modifier, filter: ai.chaz.media.ColorPreset = ai.chaz.media.ColorPreset.ORIGINAL) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val needsCamera = source.kind != ai.chaz.capture.SourceKind.RECORDED_VIDEO
@@ -248,8 +281,37 @@ private fun SourcePreview(source: CameraSource, modifier: Modifier) {
     key(source) {
         AndroidView(
             factory = { ctx -> source.createPreview(ctx, owner) },
+            update = { v ->
+                // 원본 미리보기에도 같은 색 필터 (API 31+ RenderEffect, GPU)
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    v.setRenderEffect(filter.colorFilter()?.let { android.graphics.RenderEffect.createColorFilterEffect(it) })
+                }
+            },
             modifier = modifier,
             onRelease = { view -> source.releasePreview(view) },
+        )
+    }
+}
+
+/** 라이브 합성 미리보기 (T09). 화면에 있는 동안만 수집 → 주행 잠금으로 덮이면 즉시 멈춘다. */
+@Composable
+private fun LiveComposite(graph: AppGraph, layout: ai.chaz.media.Layout, filter: ai.chaz.media.ColorPreset, modifier: Modifier) {
+    val frame by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, layout, filter) {
+        graph.live.frames(layout, filter).collect { value = it }
+    }
+    val stats by graph.live.stats.collectAsState()
+    Box(modifier.background(Tokens.bg), contentAlignment = Alignment.Center) {
+        frame?.let {
+            androidx.compose.foundation.Image(
+                it.asImageBitmap(), null, Modifier.fillMaxSize().padding(8.dp),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            )
+        } ?: Text("미리보기 준비 중…", color = Tokens.text2, fontSize = 18.sp)
+        Text(
+            "LIVE ${layout.id} · ${"%.0f".format(stats.fps)}fps" + if (stats.segmentation) "" else " · 프레임만",
+            color = Tokens.text, fontSize = 13.sp, style = Tokens.tabular,
+            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                .background(Tokens.bg.copy(alpha = 0.7f), Tokens.controlShape).padding(horizontal = 10.dp, vertical = 6.dp),
         )
     }
 }

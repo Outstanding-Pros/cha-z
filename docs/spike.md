@@ -82,6 +82,11 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - 함정: JPEG 디코드 비트맵은 `hasAlpha=false` 라 마스크로 투명하게 만든 부분이 검게 그려짐 → `setHasAlpha(true)`. 경로만 `DST_IN` 으로 그리면 경로 밖 변환 이미지가 남음 → 전체 크기 마스크 비트맵으로 `DST_IN`.
 - 디버그 APK 98MB(대부분 MediaPipe·Pleos 네이티브, 비압축 dex). ABI 는 arm64-v8a·x86_64 만 포함.
 
+### T09 라이브 미리보기 실측
+- L1 라이브: 인물 분리 포함 ~2.8fps → 자동으로 프레임만(~7fps). L2 는 인물 분리 포함 ~1fps.
+- 주행 전환(개발용 오버라이드) → 미리보기 수집 중단까지 75ms, 정차 복귀 → 재시작 0.1초.
+- 개발용 주행 전환: `adb shell am start --user 10 -f 0x20000000 -n ai.chaz/.MainActivity --es drive on|off|auto`
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 

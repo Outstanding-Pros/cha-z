@@ -35,6 +35,8 @@ data class RenderOptions(
     val stamp: StampInfo,
     val frameColor: FrameColor = FrameColor.WHITE,
     val showStamp: Boolean = true,
+    /** 색 필터 (미리보기에서 고른 값이 기본). 사진 부분에만 적용하고 프레임 색은 그대로 둔다. */
+    val filter: ColorPreset = ColorPreset.ORIGINAL,
     /** L1: 실내 카메라의 정적 창문 마스크. */
     val windowMask: WindowMask? = null,
     /** 결과물에 쓴 소스 종류 → 시뮬레이션·AI 표기 (SPEC 구현 규칙 5). */

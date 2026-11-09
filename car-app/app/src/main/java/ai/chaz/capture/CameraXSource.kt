@@ -11,6 +11,8 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import android.os.SystemClock
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
@@ -44,6 +46,10 @@ class CameraXSource(
         .build()
     /** 클립 스냅샷용 최신 프레임. 매 프레임 변환은 비싸서 250ms 마다만 갱신한다. */
     private val analysis = ImageAnalysis.Builder()
+        // 스틸(16:9)과 같은 화각이어야 L1 창문 마스크가 라이브 미리보기에서도 맞는다
+        .setResolutionSelector(
+            ResolutionSelector.Builder().setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY).build(),
+        )
         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
         .build()
@@ -68,7 +74,7 @@ class CameraXSource(
                 analysis.setAnalyzer(analysisExecutor) { image ->
                     image.use {
                         val now = SystemClock.uptimeMillis()
-                        if (now - latestAt >= 250) {
+                        if (now - latestAt >= SNAPSHOT_INTERVAL_MS) {
                             latest = it.toBitmap().rotate(it.imageInfo.rotationDegrees)
                             latestAt = now
                         }
@@ -136,5 +142,9 @@ class CameraXSource(
     private fun Bitmap.rotate(degrees: Int): Bitmap =
         if (degrees == 0) this else Bitmap.createBitmap(this, 0, 0, width, height, Matrix().apply { postRotate(degrees.toFloat()) }, true)
 
-    companion object { private const val TAG = "ChazCamera" }
+    companion object {
+        private const val TAG = "ChazCamera"
+        /** 라이브 미리보기(15fps 목표)를 위해 ~12fps 로 최신 프레임을 갱신. */
+        const val SNAPSHOT_INTERVAL_MS = 80L
+    }
 }

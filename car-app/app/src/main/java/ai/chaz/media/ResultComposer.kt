@@ -56,7 +56,14 @@ class ResultComposer(
         else -> renderers.containsKey(layout)
     }
 
-    suspend fun options(result: CaptureSessionEngine.Result, frameColor: FrameColor, showStamp: Boolean): RenderOptions {
+    /** 라이브 미리보기용 (세션 전): 오늘 날짜 + 현재 소스 종류. */
+    suspend fun previewOptions(kinds: Set<SourceKind>): RenderOptions = RenderOptions(
+        stamp = StampInfo(dateText = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date())),
+        windowMask = windowMask(),
+        sourceKinds = kinds,
+    )
+
+    suspend fun options(result: CaptureSessionEngine.Result, frameColor: FrameColor, showStamp: Boolean, filter: ColorPreset = ColorPreset.ORIGINAL): RenderOptions {
         val v = vehicle()
         val kinds = (result.cuts.flatMap { c -> c.frames.map { it.source } }).toSet()
         return RenderOptions(
@@ -69,6 +76,7 @@ class ResultComposer(
             ),
             frameColor = frameColor,
             showStamp = showStamp,
+            filter = filter,
             windowMask = windowMask(),
             sourceKinds = kinds,
         )

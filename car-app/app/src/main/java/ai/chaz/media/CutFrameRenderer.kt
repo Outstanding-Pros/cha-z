@@ -42,7 +42,8 @@ class CutFrameRenderer(private val segmenter: PersonSegmenter) : LayoutRenderer 
 
             cuts.forEachIndexed { i, cut ->
                 val cell = RectF(side, top + i * (cellH + gap), side + cellW, top + i * (cellH + gap) + cellH)
-                cv.save()
+                // 칸 내용을 필터 레이어에 그린다 (프레임 색은 필터를 받지 않게)
+                cv.saveLayer(cell, Paint().apply { colorFilter = opts.filter.colorFilter() })
                 cv.clipPath(Path().apply { addRoundRect(cell, radius, radius, Path.Direction.CW) })
                 // 배경: 외부 풍경
                 val bg = if (i % 2 == 0) (cut.front ?: cut.rear) else (cut.rear ?: cut.front)

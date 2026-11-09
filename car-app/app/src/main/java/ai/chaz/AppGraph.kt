@@ -6,6 +6,8 @@ import ai.chaz.capture.CameraXSource
 import ai.chaz.media.CutFrameRenderer
 import ai.chaz.media.FakePersonSegmenter
 import ai.chaz.media.Layout
+import ai.chaz.media.LivePreviewEngine
+import ai.chaz.media.PreviewPrefs
 import ai.chaz.media.MediaPipePersonSegmenter
 import ai.chaz.media.PersonSegmenter
 import ai.chaz.media.ResultComposer
@@ -152,6 +154,22 @@ class AppGraph(context: Context) {
             vehicle = { vehicleState },
             windowMask = { currentWindowMask() },
         )
+    }
+
+    val previewPrefs = MutableStateFlow(PreviewPrefs())
+
+    val live by lazy {
+        val withSeg = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(liveSegmenter), Layout.CUT_FRAME to CutFrameRenderer(liveSegmenter))
+        val noSeg = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(noSegmenter), Layout.CUT_FRAME to CutFrameRenderer(noSegmenter))
+        LivePreviewEngine(
+            sources = { _cameras.value },
+            renderers = { seg -> if (seg) withSeg else noSeg },
+            options = { composer.previewOptions(_cameras.value.map { it.kind }.toSet()) },
+        )
+    }
+    /** 라이브용은 결과물용과 따로 둔다 (동시에 돌 때 서로 기다리지 않게). */
+    private val liveSegmenter: PersonSegmenter by lazy {
+        if (availability.selectedId(Feature.PERSON_SEGMENTER) == ProbeChains.Ids.SEGMENTER_MEDIAPIPE) MediaPipePersonSegmenter(appContext) else noSegmenter
     }
 
     /** 실내 카메라 위치가 고정이면 정적 창문 마스크 (assets/masks/{cameraId}_windows.json). */

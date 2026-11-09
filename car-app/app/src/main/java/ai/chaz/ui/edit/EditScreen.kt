@@ -66,7 +66,11 @@ fun EditScreen(graph: AppGraph) {
     }
     val composer = graph.composer
     val cuts = r.cuts
-    var layout by remember(r) { mutableStateOf(if (composer.available(Layout.WINDOW_SWAP)) Layout.WINDOW_SWAP else Layout.CUT_FRAME) }
+    val prefs = graph.previewPrefs.value
+    var layout by remember(r) {
+        mutableStateOf(prefs.layout?.takeIf { composer.available(it) } ?: if (composer.available(Layout.WINDOW_SWAP)) Layout.WINDOW_SWAP else Layout.CUT_FRAME)
+    }
+    var filter by remember(r) { mutableStateOf(prefs.filter) }
     // 기본 셀렉: L1 = 가운데 컷 하나, L2 = 앞에서부터 최대 4컷
     var single by remember(r) { mutableStateOf(cuts.getOrNull(cuts.size / 2)?.index ?: 1) }
     var multi by remember(r) { mutableStateOf(cuts.take(4).map { it.index }.toSet()) }
@@ -81,11 +85,11 @@ fun EditScreen(graph: AppGraph) {
         if (layout == Layout.WINDOW_SWAP) cuts.filter { it.index == single }
         else cuts.filter { it.index in multi }.sortedBy { it.index }
 
-    LaunchedEffect(r, layout, single, multi, color, stamp) {
+    LaunchedEffect(r, layout, single, multi, color, stamp, filter) {
         busy = true
         message = null
         try {
-            val opts = composer.options(r, color, stamp)
+            val opts = composer.options(r, color, stamp, filter)
             preview = composer.render(layout, selectedCuts(), opts, preview = true)
         } catch (e: Exception) {
             preview = null
@@ -127,6 +131,10 @@ fun EditScreen(graph: AppGraph) {
                 Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FrameColor.entries.forEach { c -> Chip(c.label, selected = color == c) { color = c } }
                 }
+                Text("필터", color = Tokens.text2, fontSize = 13.sp)
+                FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ai.chaz.media.ColorPreset.entries.forEach { f -> Chip(f.label, selected = filter == f) { filter = f } }
+                }
                 Chip(if (stamp) "스탬프 켜짐" else "스탬프 꺼짐", selected = stamp) { stamp = !stamp }
                 Box(Modifier.weight(1f))
                 message?.let { Text(it, color = Tokens.warn, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
@@ -136,7 +144,7 @@ fun EditScreen(graph: AppGraph) {
                         scope.launch {
                             busy = true
                             try {
-                                val opts = composer.options(r, color, stamp)
+                                val opts = composer.options(r, color, stamp, filter)
                                 val full = composer.render(layout, selectedCuts(), opts, preview = false)
                                 composer.save(r.session.id, layout, full, opts)
                                 message = "갤러리(Pictures/Cha-z)에 저장했어요"

@@ -67,13 +67,8 @@ class WindowSwapRenderer(private val segmenter: PersonSegmenter) : LayoutRendere
                 })
                 // 가장자리 페더: 흐린 창 모양 마스크(전체 크기)로 알파를 깎는다.
                 // 경로만 DST_IN 으로 그리면 경로 밖에 넘친 변환 이미지가 남으므로 전체 크기 마스크를 쓴다.
-                val windowMask = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                Canvas(windowMask).drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = 0xFF000000.toInt()
-                    maskFilter = BlurMaskFilter(FEATHER_PX * (w / 1376f), BlurMaskFilter.Blur.NORMAL)
-                })
+                val windowMask = maskFor(win, w, h, path)
                 lc.drawBitmap(windowMask, 0f, 0f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) })
-                windowMask.recycle()
                 canvas.drawBitmap(layer, 0f, 0f, null)
                 layer.recycle()
             }
@@ -87,9 +82,29 @@ class WindowSwapRenderer(private val segmenter: PersonSegmenter) : LayoutRendere
                 p.recycle()
             }
 
+            opts.filter.colorFilter()?.let { cf ->
+                val filtered = Bitmap.createBitmap(photo.width, photo.height, Bitmap.Config.ARGB_8888)
+                Canvas(filtered).drawBitmap(photo, 0f, 0f, Paint().apply { colorFilter = cf })
+                Canvas(photo).drawBitmap(filtered, 0f, 0f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) })
+                filtered.recycle()
+            }
             val framed = frame(photo, opts)
             photo.recycle()
             if (scale < 1f) Bitmap.createScaledBitmap(framed, (framed.width * scale).toInt(), (framed.height * scale).toInt(), true) else framed
+        }
+    }
+
+    /** 흐린 창 모양 마스크는 크기·창마다 고정이라 캐시한다 (라이브 미리보기에서 매 프레임 다시 만들지 않게). */
+    private val maskCache = HashMap<String, Bitmap>()
+
+    private fun maskFor(win: WindowQuad, w: Int, h: Int, path: Path): Bitmap = synchronized(maskCache) {
+        maskCache.getOrPut("${win.name}@${w}x$h") {
+            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                Canvas(it).drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = 0xFF000000.toInt()
+                    maskFilter = BlurMaskFilter(FEATHER_PX * (w / 1376f), BlurMaskFilter.Blur.NORMAL)
+                })
+            }
         }
     }
 

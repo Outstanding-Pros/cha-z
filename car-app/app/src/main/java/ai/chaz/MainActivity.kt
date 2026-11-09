@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
         }
         // 개발용 발화 주입: --es say "차즈 1분 동안 10번 찍어줘" (호출어 경로와 같게 처리)
         injectSay(intent)
+        injectDrive(intent)
         setContent {
             ChazTheme { ChazRoot(graph, initial) }
         }
@@ -41,6 +42,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         injectSay(intent)
+        injectDrive(intent)
+    }
+
+    /** 개발용: --es drive on|off|auto (Virtual Console 없이 주행/정차 전환 — 개발용 오버라이드) */
+    private fun injectDrive(intent: Intent?) {
+        val v = intent?.getStringExtra("drive") ?: return
+        val hub = (application as ChazApp).graph.driving
+        hub.setOverride(when (v) {
+            "on" -> ai.chaz.platform.driving.DrivingGateHub.Override.FORCE_DRIVING
+            "off" -> ai.chaz.platform.driving.DrivingGateHub.Override.FORCE_PARKED
+            else -> ai.chaz.platform.driving.DrivingGateHub.Override.AUTO
+        })
     }
 
     private fun injectSay(intent: Intent?) {
