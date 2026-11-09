@@ -79,18 +79,18 @@ object ProbeChains {
                 Candidate("fallback.demo-route", "데모 경로 재생", Tier.FALLBACK) { ProbeResult.Ok("데모 경로 사용") },
             ),
             Feature.WAKE_WORD to listOf(
-                Candidate(Ids.WAKE_PLEOS, "SpeechToText SDK 호출어", Tier.PLEOS_SDK) {
-                    // TODO(pleos-api): 커스텀 호출어("차즈") 등록 API 확인 필요 — WakeUpWordConfig 는 결과 타입만 확인됨
-                    ProbeResult.Pending("커스텀 호출어 지원 미확인")
+                Candidate(Ids.WAKE_PLEOS, "SpeechToText SDK 연속 인식 + '차즈' 감지", Tier.PLEOS_SDK) {
+                    // TODO(pleos-api): 커스텀 호출어 등록 API 는 미확인 → 온디바이스 연속 인식 결과에서 '차즈'를 찾는다
+                    VoiceProbes.probePleosStt(ctx)
                 },
-                Candidate(Ids.WAKE_VOSK, "Vosk 한국어(문법 제한)", Tier.FALLBACK) { ProbeResult.Pending("T07에서 모델 포함") },
+                Candidate(Ids.WAKE_VOSK, "Vosk 한국어(문법 제한)", Tier.FALLBACK) { ProbeResult.Pending("미포함 — Pleos 온디바이스 STT로 대체(용량)") },
                 Candidate(Ids.WAKE_BUTTON, "음성 버튼", Tier.FALLBACK) { ProbeResult.Ok("버튼 탭 후 명령") },
             ),
             Feature.SPEECH_INPUT to listOf(
                 Candidate(Ids.STT_PLEOS, "SpeechToText SDK", Tier.PLEOS_SDK) { VoiceProbes.probePleosStt(ctx) },
                 Candidate(Ids.STT_ANDROID, "Android SpeechRecognizer", Tier.PLATFORM) { VoiceProbes.probeAndroidRecognizer(ctx) },
                 Candidate(Ids.STT_BIZROUTER, "비즈라우터 전사", Tier.BIZROUTER) { bizrouter() },
-                Candidate(Ids.STT_VOSK, "Vosk 자유 발화", Tier.FALLBACK) { ProbeResult.Pending("T07에서 모델 포함") },
+                Candidate(Ids.STT_VOSK, "Vosk 자유 발화", Tier.FALLBACK) { ProbeResult.Pending("미포함 — 용량") },
             ),
             Feature.SPEECH_OUTPUT to listOf(
                 Candidate(Ids.TTS_PLEOS, "TextToSpeech SDK", Tier.PLEOS_SDK) { VoiceProbes.probePleosTts(ctx) },

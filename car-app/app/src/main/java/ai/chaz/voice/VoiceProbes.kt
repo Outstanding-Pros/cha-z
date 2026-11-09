@@ -38,7 +38,7 @@ object VoiceProbes {
         }
 
     /** Pleos SpeechToText SDK: initialize() 성공 여부. */
-    suspend fun probePleosStt(context: Context, mode: SttMode = SttMode.HYBRID): ProbeResult =
+    suspend fun probePleosStt(context: Context, mode: SttMode = SttMode.ON_DEVICE): ProbeResult =
         withContext(Dispatchers.Main) {
             val stt = PleosStt(context.applicationContext, mode)
             val done = CompletableDeferred<ProbeResult>()
@@ -68,8 +68,9 @@ object VoiceProbes {
         }
     }
 
+    /** 서비스는 있다고 나오지만 실측에서 ERROR 11(서버 연결 끊김) → 사용 불가로 둔다 (docs/spike.md). */
     fun probeAndroidRecognizer(context: Context): ProbeResult =
         if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            ProbeResult.Ok("인식 서비스 있음 (실제 인식은 런타임 실패 시 다음 후보로)")
+            ProbeResult.Fail("서비스는 있으나 실측 ERROR 11 (Pleos 기본 인식기 서버 연결 끊김)")
         } else ProbeResult.Fail("인식 서비스 없음")
 }

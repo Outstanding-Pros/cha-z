@@ -70,6 +70,12 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - 권한 `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`, `NAVI_CUSTOM_MAP`.
 - `initialize → addListener → getCurrentLocationInfo` 로 `onCurrentLocationInfo` 수신 확인.
 
+### T07 음성 체인 실측
+- 호출어: Pleos STT ON_DEVICE 연속 인식 루프(10초 단위 request 반복) 동작, 화면에 마이크 표시. **실제 "차즈" 발화 인식률은 사용자 확인 필요.**
+- 명령 주입(adb `--es say64`, 점검 탭)으로 확인: "30초 동안 6번" → 30초 6컷, "그만" → 1컷 저장 후 중지, "다시 찍어줘" → 직전 설정, "오늘 저녁 뭐 먹지" → LLM 폴백 Unknown → "다시 말씀해 주세요".
+- LLM 폴백(`/intent/parse`): gemini-3.1-flash-lite ~1.1초, gpt-5-nano ~1.7초, gpt-5.4-nano ~1.3초 → flash-lite 선택.
+- adb shell 로 한글 extra 를 넘기면 깨진다 → base64(`say64`)로 주입. 실행 중인 화면에 보내려면 `-f 0x20000000`(SINGLE_TOP).
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 

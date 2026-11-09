@@ -15,7 +15,8 @@ import httpx
 from .providers import ImageGenError, _base, _cfg
 
 # 촬영 트리거 단어. 공백/문장부호 제거 후 부분 일치로 판정.
-TRIGGER_WORDS = ("찍어", "찍자", "치즈", "김치", "촬영")
+# SPEC: "치즈"는 일상 대화 오인식을 막기 위해 받지 않는다
+TRIGGER_WORDS = ("차즈", "찍어", "찍자", "촬영")
 
 
 class VoiceError(ImageGenError):

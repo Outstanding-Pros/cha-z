@@ -82,7 +82,11 @@ fun StandbyScreen(graph: AppGraph) {
                     }
                 }
                 Box(Modifier.padding(top = 16.dp))
-                listOf(Feature.SPEECH_OUTPUT, Feature.SPEECH_INPUT).forEach { f ->
+                ai.chaz.ui.Chip("🎙 음성 명령", selected = false) { graph.voice.voiceButton() }
+                val heard by graph.voice.lastHeard.collectAsState()
+                heard?.let { Text("들은 말: \"$it\"", color = Tokens.text2, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
+                Box(Modifier.padding(top = 12.dp))
+                listOf(Feature.WAKE_WORD, Feature.SPEECH_OUTPUT, Feature.SPEECH_INPUT).forEach { f ->
                     val sel = selections[f]
                     Text(
                         "${f.label}: " + (sel?.selected?.label ?: if (sel == null) "판정 중" else "없음"),

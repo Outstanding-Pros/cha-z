@@ -5,6 +5,7 @@ import ai.chaz.ui.Tab
 import ai.chaz.ui.spike.SpikeRunner
 import ai.chaz.ui.theme.ChazTheme
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -29,10 +30,27 @@ class MainActivity : ComponentActivity() {
             "tts" -> graph.scope.launch { SpikeRunner(applicationContext).pleosTts(ai.pleos.playground.tts.constant.Mode.ON_DEVICE) }
             "stt" -> graph.scope.launch { SpikeRunner(applicationContext).pleosStt(ai.pleos.playground.stt.constant.Mode.ON_DEVICE) }
         }
+        // 개발용 발화 주입: --es say "차즈 1분 동안 10번 찍어줘" (호출어 경로와 같게 처리)
+        injectSay(intent)
         setContent {
             ChazTheme { ChazRoot(graph, initial) }
         }
         requestRuntimePermissions()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        injectSay(intent)
+    }
+
+    private fun injectSay(intent: Intent?) {
+        // adb shell 은 한글 인자가 깨지므로 base64(UTF-8) 도 받는다: --es say64 <base64>
+        val text = intent?.getStringExtra("say")
+            ?: intent?.getStringExtra("say64")?.let { String(android.util.Base64.decode(it, android.util.Base64.DEFAULT), Charsets.UTF_8) }
+            ?: return
+        android.util.Log.i("ChazVoice", "주입된 발화 ${text.length}자")
+        val graph = (application as ChazApp).graph
+        graph.scope.launch { graph.voice.handleText(text, requireWake = true) }
     }
 
     private fun requestRuntimePermissions() {

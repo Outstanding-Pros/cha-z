@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,8 +55,8 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
             hub = graph.driving,
             line1 = line1,
             line2 = line2,
-            // TODO(T07): 음성 버튼 → SpeechInput. 지금은 기본 촬영(12초 4컷)으로 바로 연결
-            onVoice = { graph.capture.start(TriggerSource.VOICE_BUTTON) },
+            // T2: 음성 버튼 1회 탭 후 명령
+            onVoice = { graph.voice.voiceButton() },
             action = if (state is AppState.Capturing) "중지" to { graph.capture.stop() } else null,
         ) {
             Row(Modifier.fillMaxSize()) {
@@ -70,6 +71,20 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
                         }
                     }
                 }
+            }
+        }
+        // 마이크 사용 중 표시 (SPEC: 마이크를 쓰는 동안 항상 표시)
+        val listening by graph.voice.listening.collectAsState()
+        if (listening) {
+            Row(
+                Modifier.align(Alignment.TopEnd).padding(12.dp)
+                    .background(Tokens.surface2, Tokens.controlShape)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(Modifier.size(10.dp).background(Tokens.rec, androidx.compose.foundation.shape.CircleShape))
+                Text("마이크 · '차즈' 듣는 중", color = Tokens.text, fontSize = 14.sp)
             }
         }
         // 개발용 오버라이드로 주행을 고정했을 때 설정에 못 들어가는 일을 막는다 (시연 화면에는 안 보임)

@@ -16,6 +16,8 @@ interface CuePlayer {
     /** n = 3, 2, 1 */
     fun countdown(n: Int)
     fun shutter()
+    /** 호출어 감지·음성 버튼: 짧은 효과음 후 명령을 듣는다. */
+    fun listening() = Unit
     fun release() = Unit
 }
 
@@ -23,6 +25,7 @@ class FakeCuePlayer(private val log: MutableList<String> = mutableListOf()) : Cu
     val events: List<String> get() = log
     override fun countdown(n: Int) { log += "cd$n" }
     override fun shutter() { log += "shutter" }
+    override fun listening() { log += "listening" }
 }
 
 class SoundPoolCuePlayer(context: Context) : CuePlayer {
@@ -52,6 +55,8 @@ class SoundPoolCuePlayer(context: Context) : CuePlayer {
     }
 
     override fun shutter() = shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+
+    override fun listening() { tone.startTone(ToneGenerator.TONE_PROP_ACK, 120) }
 
     override fun release() {
         pool.release()

@@ -29,7 +29,7 @@ import ai.pleos.playground.tts.constant.Mode as TtsMode
 
 /** 개발용 T04 스파이크 화면. */
 @Composable
-fun SpikeScreen(@Suppress("UNUSED_PARAMETER") graph: AppGraph) {
+fun SpikeScreen(graph: AppGraph) {
     val context = LocalContext.current
     val runner = remember { SpikeRunner(context.applicationContext) }
     val lines by runner.lines.collectAsState()
@@ -50,6 +50,15 @@ fun SpikeScreen(@Suppress("UNUSED_PARAMETER") graph: AppGraph) {
             Chip("Pleos TTS", false) { run { runner.pleosTts(TtsMode.HYBRID) } }
             Chip("Pleos STT", false) { run { runner.pleosStt(SttMode.HYBRID) } }
         }
+        // 음성 명령 디버그: 마이크 없이도 파서·실행을 시험 (정차 중 개발용)
+        var cmd by remember { mutableStateOf("차즈 30초 동안 6번 찍어줘") }
+        val heard by graph.voice.lastHeard.collectAsState()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.OutlinedTextField(cmd, { cmd = it }, singleLine = true, modifier = Modifier.weight(1f), label = { Text("명령 주입") })
+            Chip("실행", false) { scope.launch { graph.voice.handleText(cmd, requireWake = false) } }
+            Chip("파싱만", false) { runner.note("파싱: \"$cmd\" → ${ai.chaz.voice.IntentParser.parse(cmd)}") }
+        }
+        Text("들은 말: ${heard ?: "-"}", color = Tokens.text2, fontSize = 14.sp)
         LazyColumn(Modifier.weight(1f)) {
             itemsIndexed(lines) { _, l ->
                 Text(l, color = if (l.startsWith("==")) Tokens.accent else Tokens.text, fontSize = 14.sp, fontFamily = FontFamily.Monospace)

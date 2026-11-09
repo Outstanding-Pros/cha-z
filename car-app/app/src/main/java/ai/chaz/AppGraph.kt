@@ -8,7 +8,16 @@ import ai.chaz.data.CaptureConfig
 import ai.chaz.data.Session
 import ai.chaz.state.AppEvent
 import ai.chaz.state.AppStateMachine
+import ai.chaz.data.TriggerSource
+import ai.chaz.platform.Feature
+import ai.chaz.state.AppState
+import ai.chaz.sync.IntentClient
 import ai.chaz.voice.AudioFocus
+import ai.chaz.voice.CommandSink
+import ai.chaz.voice.PleosSpeechInput
+import ai.chaz.voice.ServerSpeechInput
+import ai.chaz.voice.SpeechInputRouter
+import ai.chaz.voice.VoiceCommandController
 import ai.chaz.voice.PleosSpeechOutput
 import ai.chaz.voice.ResourceTtsPhrases
 import ai.chaz.voice.ServerSpeechOutput
@@ -19,7 +28,6 @@ import java.util.Date
 import java.util.Locale
 import ai.chaz.capture.CameraSourceFactory
 import ai.chaz.platform.CapabilityProbe
-import ai.chaz.platform.Feature
 import ai.chaz.platform.ProbeChains
 import ai.chaz.platform.SdkAvailability
 import ai.chaz.platform.driving.CarUxDrivingGate
@@ -82,6 +90,48 @@ class AppGraph(context: Context) {
         )
     }
 
+    // 음성 입력: Pleos STT(온디바이스) → 비즈라우터 전사. 호출어는 Pleos 연속 인식으로만 (무료·로컬)
+    private val pleosStt = PleosSpeechInput(appContext)
+    private val serverStt = ServerSpeechInput(appContext, BuildConfig.CHAZ_SERVER_URL)
+    val speechInput = SpeechInputRouter(
+        availability, probe,
+        impls = mapOf(ProbeChains.Ids.STT_PLEOS to pleosStt, ProbeChains.Ids.STT_BIZROUTER to serverStt),
+        fallback = serverStt,
+    )
+    private val intentClient = IntentClient(BuildConfig.CHAZ_SERVER_URL)
+
+    val voice by lazy {
+        VoiceCommandController(
+            scope = scope,
+            sink = object : CommandSink {
+                override val capturing get() = capture.model.value.state is AppState.Capturing
+                override val lastConfig get() = capture.lastConfig
+                override val driving get() = this@AppGraph.driving.restricted.value
+                override fun startCapture(trigger: TriggerSource, config: CaptureConfig) { capture.start(trigger, config) }
+                override fun stopCapture() = capture.stop()
+            },
+            speech = speech,
+            input = speechInput,
+            wakeInput = { if (availability.selectedId(Feature.WAKE_WORD) == ProbeChains.Ids.WAKE_PLEOS) pleosStt else null },
+            cues = cues,
+            phrases = phrases,
+            llm = { intentClient.classify(it) },
+        )
+    }
+
+    @Volatile private var foreground = false
+
+    /** 앱이 화면에 보일 때만 호출어를 듣는다 (ChazApp 이 ProcessLifecycle 로 호출). */
+    fun onForeground(visible: Boolean) {
+        foreground = visible
+        updateWakeLoop()
+    }
+
+    private fun updateWakeLoop() {
+        val micOk = appContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (foreground && micOk) voice.startWakeLoop() else voice.stopWakeLoop()
+    }
+
     private val _probing = MutableStateFlow(false)
     val probing: StateFlow<Boolean> = _probing.asStateFlow()
 
@@ -89,6 +139,15 @@ class AppGraph(context: Context) {
         reprobe()
         scope.launch {
             driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
+        }
+        scope.launch {
+            // 마지막 세션 종료 후 3초는 호출어 무시 (SPEC)
+            var wasCapturing = false
+            capture.model.collect { m ->
+                val c = m.state is AppState.Capturing
+                if (wasCapturing && !c) voice.ignoreWakeUntil = System.currentTimeMillis() + 3_000
+                wasCapturing = c
+            }
         }
         scope.launch {
             driving.status.collect { android.util.Log.i("ChazDriving", "restricted=${it.restricted} source=${it.source} detail=${it.detail} override=${it.override}") }
@@ -107,6 +166,7 @@ class AppGraph(context: Context) {
                 attachDrivingGate()
                 rebuildCameras()
                 // 기본 안내 문구를 미리 준비 (Pleos 는 모델 로딩, 비즈라우터는 사전 합성)
+                updateWakeLoop()
                 speech.prepare(listOf(phrases.captureStart(CaptureConfig()), phrases.doneParked(), phrases.doneDriving()))
             } finally {
                 _probing.value = false

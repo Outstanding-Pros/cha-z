@@ -26,7 +26,7 @@ load_dotenv(ROOT / ".env", override=True)
 from fastapi import File, UploadFile  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 
-from . import frames, prompts, providers, voice  # noqa: E402  (.env 로드 후 import)
+from . import frames, intent, prompts, providers, voice  # noqa: E402  (.env 로드 후 import)
 
 log = logging.getLogger("photolive")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -207,6 +207,23 @@ def _file(fid: str, name: str, media: str) -> FileResponse:
     if not p.exists():
         raise HTTPException(404, "not found")
     return FileResponse(p, media_type=media)
+
+
+class IntentRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/intent/parse")
+def intent_parse(body: IntentRequest):
+    """규칙 파서 실패 시 LLM 분류 (SPEC Edge Function intent-parse 대체)."""
+    t0 = time.time()
+    try:
+        out = intent.classify(body.text)
+    except Exception as e:  # 네트워크·모델 오류는 UNKNOWN 으로 (앱이 "다시 말씀해 주세요")
+        log.warning("intent parse 실패: %s", e)
+        out = {"intent": "UNKNOWN", "durationSec": None, "count": None, "mood": None, "error": str(e)[:200]}
+    out["seconds"] = round(time.time() - t0, 2)
+    return out
 
 
 @app.get("/frames/{fid}.png")

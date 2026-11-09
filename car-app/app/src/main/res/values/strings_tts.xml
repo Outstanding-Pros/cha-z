@@ -8,4 +8,10 @@
     <string name="tts_done_parked">편집 화면으로 갈게요.</string>
     <string name="tts_stopped">촬영을 멈췄어요.</string>
     <string name="tts_retake">다시 찍을게요.</string>
+    <string name="tts_help">"차즈 1분 동안 10번 찍어줘", "차즈 다시 찍어줘", "차즈 그만"처럼 말해 보세요.</string>
+    <string name="tts_unknown">다시 말씀해 주세요.</string>
+    <string name="tts_bgm_not_ready">노래 기능은 곧 준비할게요.</string>
+    <string name="tts_phone_not_paired">정차 후 화면의 QR로 폰을 연결해 주세요.</string>
+    <string name="tts_light_driving">정차 후에 바꿀 수 있어요.</string>
+    <string name="tts_light_not_ready">조명 연출은 곧 준비할게요.</string>
 </resources>

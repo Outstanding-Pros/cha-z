@@ -44,6 +44,8 @@ class SpikeRunner(private val context: Context) {
 
     fun clear() { _lines.value = emptyList() }
 
+    fun note(s: String) = log(s)
+
     suspend fun runAll() {
         clear()
         cameras()
