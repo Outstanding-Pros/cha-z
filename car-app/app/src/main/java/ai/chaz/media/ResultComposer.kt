@@ -41,6 +41,10 @@ class ResultComposer(
 ) {
     private val cache = LinkedHashMap<String, CutImages>()
 
+    private val _lastSaved = kotlinx.coroutines.flow.MutableStateFlow<Result?>(null)
+    /** 마지막으로 저장한 완성본 — "차즈 폰으로 보내줘"가 보낸다. */
+    val lastSaved: kotlinx.coroutines.flow.StateFlow<Result?> = _lastSaved
+
     private suspend fun images(cut: Cut, sample: Int): CutImages = withContext(Dispatchers.IO) {
         val key = "${cut.sessionId}/${cut.index}@$sample"
         synchronized(cache) { cache[key] } ?: CutImages.load(cut, sample).also {
@@ -107,7 +111,8 @@ class ResultComposer(
             uri?.let { u -> context.contentResolver.openOutputStream(u)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) } }
         }
 
-        val result = Result(id, listOf(sessionId), layout, file.absolutePath, emptyList(), opts.sourceKinds)
+        val result = Result(id, listOf(sessionId), layout, file.absolutePath, listOfNotNull(opts.filter.takeIf { it != ColorPreset.ORIGINAL }?.name), opts.sourceKinds)
+        _lastSaved.value = result
         File(dir, "$id.json").writeText(
             JSONObject()
                 .put("id", id).put("sessionIds", JSONArray(result.sessionIds)).put("layout", layout.name)

@@ -1,0 +1,132 @@
+package ai.chaz.sync
+
+import ai.chaz.media.Result
+import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
+
+/** 이 차량 기기의 고정 id (devices 테이블). 첫 실행 때 만들어 저장한다. */
+object DeviceIdentity {
+    fun carId(context: Context): String {
+        val prefs = context.getSharedPreferences("chaz", Context.MODE_PRIVATE)
+        return prefs.getString("carDeviceId", null) ?: ("car-" + UUID.randomUUID()).also {
+            prefs.edit().putString("carDeviceId", it).apply()
+        }
+    }
+}
+
+/**
+ * 폰 연결 (SPEC F6). 서버(T10 전까지 로컬, Supabase 대체)를 거쳐서만 폰과 주고받는다.
+ * - pairing-create: QR(페어링 토큰이 담긴 PWA URL, 10분 만료). 주행 중에는 QR 을 보여 주지 않는다(화면 잠금).
+ * - deliver: 완성본 업로드 → 서버가 폰에 result.delivered 이벤트.
+ * TODO(T10+): WorkManager 업로드 큐, 오프라인 재시도.
+ */
+class PhoneLink(private val baseUrl: String, val carId: String, private val scope: CoroutineScope) {
+
+    data class Ticket(val token: String, val url: String, val expiresAtMs: Long)
+    data class State(val paired: Boolean = false, val phones: Int = 0, val reachable: Boolean = true, val ticket: Ticket? = null)
+
+    private val _state = MutableStateFlow(State())
+    val state: StateFlow<State> = _state.asStateFlow()
+    private var poll: Job? = null
+
+    /** 연결 상태 한 번 확인. */
+    suspend fun refresh(): State {
+        val s = runCatching { http("GET", "/sync/pairing-status?carDeviceId=$carId") }.fold(
+            onSuccess = { j -> _state.value.copy(paired = j.getBoolean("paired"), phones = j.getInt("phones"), reachable = true) },
+            onFailure = { _state.value.copy(reachable = false) },
+        )
+        _state.value = s
+        return s
+    }
+
+    /** QR 띄우기: 토큰을 받아 오고, 폰이 연결될 때까지 2초마다 확인한다. */
+    fun startPairing() {
+        poll?.cancel()
+        poll = scope.launch {
+            try {
+                val j = http("POST", "/sync/pairing-create", JSONObject().put("carDeviceId", carId))
+                _state.value = _state.value.copy(
+                    reachable = true,
+                    ticket = Ticket(j.getString("token"), j.getString("url"), (j.getDouble("expiresAt") * 1000).toLong()),
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "페어링 토큰 실패: ${e.message}")
+                _state.value = _state.value.copy(reachable = false)
+                return@launch
+            }
+            val before = _state.value.phones
+            while (isActive) {
+                delay(2_000)
+                val s = refresh()
+                if (s.phones > before) { _state.value = s.copy(ticket = null); break }
+                val t = s.ticket
+                if (t != null && System.currentTimeMillis() > t.expiresAtMs) { _state.value = s.copy(ticket = null); break }
+            }
+        }
+    }
+
+    fun stopPairing() {
+        poll?.cancel()
+        _state.value = _state.value.copy(ticket = null)
+    }
+
+    /** 완성본 전송. 연결된 폰 수를 돌려준다. */
+    suspend fun deliver(result: Result): Int = withContext(Dispatchers.IO) {
+        val meta = JSONObject()
+            .put("id", result.id).put("sessionIds", JSONArray(result.sessionIds)).put("layout", result.layout.name)
+            .put("kind", "PHOTO").put("filters", JSONArray(result.filters))
+            .put("sourceKinds", JSONArray(result.sourceKinds.map { it.name })).put("createdOn", result.createdOn)
+        val boundary = "----chaz" + System.nanoTime()
+        val conn = (URL("$baseUrl/sync/results").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true; connectTimeout = 3_000; readTimeout = 20_000
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+        try {
+            conn.outputStream.use { o ->
+                fun field(name: String, value: String) =
+                    o.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray(Charsets.UTF_8))
+                field("carDeviceId", carId)
+                field("meta", meta.toString())
+                o.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"result.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".toByteArray())
+                File(result.path).inputStream().use { it.copyTo(o) }
+                o.write("\r\n--$boundary--\r\n".toByteArray())
+            }
+            if (conn.responseCode != 200) error("전송 실패 HTTP ${conn.responseCode}")
+            JSONObject(conn.inputStream.bufferedReader().readText()).getInt("deliveredTo")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private suspend fun http(method: String, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+        val conn = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+            requestMethod = method; connectTimeout = 3_000; readTimeout = 5_000
+            if (body != null) { doOutput = true; setRequestProperty("Content-Type", "application/json; charset=utf-8") }
+        }
+        try {
+            body?.let { b -> conn.outputStream.use { it.write(b.toString().toByteArray(Charsets.UTF_8)) } }
+            if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
+            JSONObject(conn.inputStream.bufferedReader().readText())
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    companion object { private const val TAG = "ChazPhone" }
+}

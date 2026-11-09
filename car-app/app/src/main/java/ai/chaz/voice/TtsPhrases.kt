@@ -27,6 +27,10 @@ class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
     override fun phoneNotPaired() = res.getString(R.string.tts_phone_not_paired)
     override fun lightWhileDriving() = res.getString(R.string.tts_light_driving)
     override fun lightNotReady() = res.getString(R.string.tts_light_not_ready)
+    override fun sentToPhone() = res.getString(R.string.tts_sent_phone)
+    override fun sendFailed() = res.getString(R.string.tts_send_failed)
+    override fun noResult() = res.getString(R.string.tts_no_result)
+    override fun handoffNotReady() = res.getString(R.string.tts_handoff_not_ready)
 }
 
 /** 테스트용 고정 문구. */
@@ -42,4 +46,8 @@ object PlainTtsPhrases : TtsPhrases, VoicePhrases {
     override fun phoneNotPaired() = "phone-not-paired"
     override fun lightWhileDriving() = "light-driving"
     override fun lightNotReady() = "light-not-ready"
+    override fun sentToPhone() = "sent"
+    override fun sendFailed() = "send-failed"
+    override fun noResult() = "no-result"
+    override fun handoffNotReady() = "handoff-not-ready"
 }

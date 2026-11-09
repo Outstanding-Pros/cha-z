@@ -22,7 +22,12 @@ interface CommandSink {
     val driving: Boolean
     fun startCapture(trigger: TriggerSource, config: CaptureConfig)
     fun stopCapture()
+    val phonePaired: Boolean
+    /** 마지막 완성본(없으면 기본 레이아웃으로 만들어)을 폰으로 보낸다. */
+    suspend fun sendToPhone(): SendOutcome
 }
+
+enum class SendOutcome { SENT, NO_RESULT, FAILED }
 
 /** 명령 응답 문구 (res/values/strings_tts.xml). */
 interface VoicePhrases {
@@ -32,6 +37,10 @@ interface VoicePhrases {
     fun phoneNotPaired(): String
     fun lightWhileDriving(): String
     fun lightNotReady(): String
+    fun sentToPhone(): String
+    fun sendFailed(): String
+    fun noResult(): String
+    fun handoffNotReady(): String
 }
 
 /**
@@ -170,7 +179,15 @@ class VoiceCommandController(
             Intent.Retake -> sink.startCapture(trigger, sink.lastConfig)
             Intent.Stop -> Unit
             is Intent.BgmPlay, Intent.BgmStop -> speakSafely(phrases.bgmNotReady())            // TODO(T13·F4)
-            Intent.HandoffPhone, Intent.SendPhone -> speakSafely(phrases.phoneNotPaired())    // TODO(T10·T15)
+            Intent.SendPhone -> speakSafely(
+                if (!sink.phonePaired) phrases.phoneNotPaired()
+                else when (sink.sendToPhone()) {
+                    SendOutcome.SENT -> phrases.sentToPhone()
+                    SendOutcome.NO_RESULT -> phrases.noResult()
+                    SendOutcome.FAILED -> phrases.sendFailed()
+                },
+            )
+            Intent.HandoffPhone -> speakSafely(if (sink.phonePaired) phrases.handoffNotReady() else phrases.phoneNotPaired()) // TODO(T15)
             is Intent.LightMood -> speakSafely(if (sink.driving) phrases.lightWhileDriving() else phrases.lightNotReady()) // TODO(T13)
             Intent.Help -> speakSafely(phrases.help())
             Intent.Unknown -> speakSafely(phrases.unknown())

@@ -33,6 +33,9 @@ import ai.chaz.voice.PleosSpeechInput
 import ai.chaz.voice.ServerSpeechInput
 import ai.chaz.voice.SpeechInputRouter
 import ai.chaz.voice.VoiceCommandController
+import ai.chaz.voice.SendOutcome
+import ai.chaz.sync.DeviceIdentity
+import ai.chaz.sync.PhoneLink
 import ai.chaz.voice.PleosSpeechOutput
 import ai.chaz.voice.ResourceTtsPhrases
 import ai.chaz.voice.ServerSpeechOutput
@@ -90,7 +93,7 @@ class AppGraph(context: Context) {
         ),
         fallback = serverSpeech,
     )
-    private val phrases = ResourceTtsPhrases(appContext)
+    val phrases = ResourceTtsPhrases(appContext)
     private val cues by lazy { SoundPoolCuePlayer(appContext) }
 
     val capture by lazy {
@@ -124,6 +127,8 @@ class AppGraph(context: Context) {
                 override val driving get() = this@AppGraph.driving.restricted.value
                 override fun startCapture(trigger: TriggerSource, config: CaptureConfig) { capture.start(trigger, config) }
                 override fun stopCapture() = capture.stop()
+                override val phonePaired get() = phone.state.value.paired
+                override suspend fun sendToPhone() = sendLatestToPhone()
             },
             speech = speech,
             input = speechInput,
@@ -157,6 +162,30 @@ class AppGraph(context: Context) {
     }
 
     val previewPrefs = MutableStateFlow(PreviewPrefs())
+
+    // 폰 연결 (T10: 로컬 서버가 Supabase 대체)
+    val phone = PhoneLink(BuildConfig.CHAZ_SERVER_URL, DeviceIdentity.carId(appContext), scope)
+
+    /** 마지막 완성본을 폰으로. 저장본이 없으면 마지막 세션을 미리보기에서 고른(없으면 L2) 레이아웃으로 만들어 보낸다. */
+    suspend fun sendLatestToPhone(): SendOutcome {
+        val result = composer.lastSaved.value ?: run {
+            val session = capture.lastResult.value ?: return SendOutcome.NO_RESULT
+            if (session.cuts.isEmpty()) return SendOutcome.NO_RESULT
+            val prefs = previewPrefs.value
+            val layout = prefs.layout?.takeIf { composer.available(it) } ?: Layout.CUT_FRAME
+            runCatching {
+                val opts = composer.options(session, ai.chaz.media.FrameColor.WHITE, true, prefs.filter)
+                composer.save(session.session.id, layout, composer.render(layout, session.cuts, opts, preview = false), opts)
+            }.getOrElse { return SendOutcome.FAILED }
+        }
+        return runCatching { phone.deliver(result) }.fold(
+            onSuccess = {
+                capture.dispatch(AppEvent.SendToPhone)
+                SendOutcome.SENT
+            },
+            onFailure = { android.util.Log.w("ChazPhone", "전송 실패: ${it.message}"); SendOutcome.FAILED },
+        )
+    }
 
     val live by lazy {
         val withSeg = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(liveSegmenter), Layout.CUT_FRAME to CutFrameRenderer(liveSegmenter))
@@ -228,6 +257,7 @@ class AppGraph(context: Context) {
                 rebuildCameras()
                 // 기본 안내 문구를 미리 준비 (Pleos 는 모델 로딩, 비즈라우터는 사전 합성)
                 updateWakeLoop()
+                phone.refresh()
                 speech.prepare(listOf(phrases.captureStart(CaptureConfig()), phrases.doneParked(), phrases.doneDriving()))
             } finally {
                 _probing.value = false

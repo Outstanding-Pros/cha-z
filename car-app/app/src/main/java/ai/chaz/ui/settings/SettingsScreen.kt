@@ -44,6 +44,7 @@ fun SettingsScreen(graph: AppGraph) {
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item { ai.chaz.ui.PairingCard(graph.phone, Modifier.fillMaxWidth()) }
         item {
             Card(title = "주행 규제 (DrivingGate)") {
                 Text(

@@ -92,6 +92,7 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     implementation(libs.mediapipe.tasks.vision)
+    implementation(libs.zxing.core) // 페어링 QR
 
     // Pleos SDK — 어댑터(platform/, voice/) 뒤에서만 참조한다
     implementation(libs.pleos.vehicle)

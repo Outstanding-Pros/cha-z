@@ -1,4 +1,4 @@
-"""포토라이브 AI 프레임 생성 서버.
+"""차~즈 로컬 서버: AI 프레임 생성, 음성(TTS/STT), 인텐트 LLM 폴백, 차량↔폰 동기화(Supabase 대체), 폰 PWA 서빙.
 
 실행:  uvicorn app.main:app --host 0.0.0.0 --port 8787
 에뮬레이터에서 접근: http://10.0.2.2:8787  (8000번은 이 PC에서 다른 앱이 사용 중)
@@ -38,7 +38,17 @@ POIS: dict[str, dict] = {p["id"]: p for p in json.loads((Path(__file__).parent /
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
-app = FastAPI(title="PhotoLive Frame Server", version="0.1.0")
+app = FastAPI(title="Cha~z Local Server", version="0.2.0")
+
+# 차량 ↔ 폰 동기화 (Supabase 대체, T10) + 폰 컴패니언 PWA (companion-web/)
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+from . import sync  # noqa: E402
+
+app.include_router(sync.router)
+_PWA = ROOT.parent / "companion-web" / "public"
+_PWA.mkdir(parents=True, exist_ok=True)
+app.mount("/app", StaticFiles(directory=_PWA, html=True), name="pwa")
 
 
 class GenerateRequest(BaseModel):

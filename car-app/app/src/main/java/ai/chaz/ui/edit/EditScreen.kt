@@ -79,11 +79,34 @@ fun EditScreen(graph: AppGraph) {
     var preview by remember { mutableStateOf<Bitmap?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
     fun selectedCuts(): List<Cut> =
         if (layout == Layout.WINDOW_SWAP) cuts.filter { it.index == single }
         else cuts.filter { it.index in multi }.sortedBy { it.index }
+    val scope = rememberCoroutineScope()
+    val phone by graph.phone.state.collectAsState()
+    var pairing by remember { mutableStateOf(false) }
+    var sendAfterPair by remember { mutableStateOf(false) }
+
+    // 지금 화면의 설정으로 저장 → 폰으로 보내기 (C4)
+    suspend fun saveAndSend() {
+        busy = true
+        try {
+            val opts = composer.options(r, color, stamp, filter)
+            val full = composer.render(layout, selectedCuts(), opts, preview = false)
+            val saved = composer.save(r.session.id, layout, full, opts)
+            val n = graph.phone.deliver(saved)
+            message = "폰 ${n}대로 보냈어요 · 갤러리에도 저장했어요"
+            graph.speech.speak(graph.phrases.sentToPhone())
+        } catch (e: Exception) {
+            message = "보내지 못했어요: ${e.message}"
+        } finally {
+            busy = false
+        }
+    }
+    // QR 로 연결되면 기다리던 전송을 이어서
+    LaunchedEffect(phone.paired, sendAfterPair) {
+        if (phone.paired && sendAfterPair) { sendAfterPair = false; pairing = false; saveAndSend() }
+    }
 
     LaunchedEffect(r, layout, single, multi, color, stamp, filter) {
         busy = true
@@ -155,10 +178,20 @@ fun EditScreen(graph: AppGraph) {
                             }
                         }
                     }
+                    Chip("폰으로 보내기", selected = false) {
+                        if (busy) return@Chip
+                        if (phone.paired) scope.launch { saveAndSend() }
+                        else { pairing = true; sendAfterPair = true; graph.phone.startPairing() }
+                    }
+                }
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("다시 찍기", selected = false) { graph.capture.start(TriggerSource.SHUTTER_BUTTON, graph.capture.lastConfig) }
                     Chip("닫기", selected = false) { graph.capture.stop() }
                 }
             }
+        }
+        if (pairing) {
+            ai.chaz.ui.PairingCard(graph.phone, Modifier.fillMaxWidth())
         }
         // 컷 필름스트립
         LazyRow(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

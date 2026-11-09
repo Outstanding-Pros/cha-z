@@ -16,6 +16,10 @@ class VoiceCommandControllerTest {
         override var driving = false
         val started = mutableListOf<Pair<TriggerSource, CaptureConfig>>()
         var stops = 0
+        override var phonePaired = false
+        var sendOutcome = SendOutcome.SENT
+        var sends = 0
+        override suspend fun sendToPhone(): SendOutcome { sends++; return sendOutcome }
         override fun startCapture(trigger: TriggerSource, config: CaptureConfig) { started += trigger to config }
         override fun stopCapture() { stops++ }
     }
@@ -102,6 +106,17 @@ class VoiceCommandControllerTest {
         e.sink.driving = true
         e.ctl.onHeard("차즈 분위기 바꿔줘")
         assertEquals(listOf("phone-not-paired", "help", "light-driving"), e.speech.spoken)
+    }
+
+    @Test fun `폰으로 보내기 - 연결 안 됨, 보냄, 사진 없음`() = runTest {
+        val e = env()
+        e.ctl.onHeard("차즈 폰으로 보내줘")
+        e.sink.phonePaired = true
+        e.ctl.onHeard("차즈 폰으로 보내줘")
+        e.sink.sendOutcome = SendOutcome.NO_RESULT
+        e.ctl.onHeard("차즈 폰으로 보내줘")
+        assertEquals(listOf("phone-not-paired", "sent", "no-result"), e.speech.spoken)
+        assertEquals(2, e.sink.sends)
     }
 
     @Test fun `음성 버튼 경로는 호출어 없이도 실행`() = runTest {
