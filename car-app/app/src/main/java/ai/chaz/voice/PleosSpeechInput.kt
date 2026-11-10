@@ -9,7 +9,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import ai.pleos.playground.stt.SpeechToText as PleosStt
 import ai.pleos.playground.stt.constant.ErrorType as SttError
@@ -64,7 +63,8 @@ class PleosSpeechInput(context: Context) : SpeechInput {
             override fun onSuccess() { init.complete(null) }
             override fun onFailure(error: SttError) { init.complete(error) }
         })
-        val err = withTimeout(6_000) { init.await() }
+        // init 은 성공 시 null 로 끝나므로 감싸서 시간 초과와 구분한다
+        val err = (withTimeoutOrNull(6_000) { listOf(init.await()) } ?: run { runCatching { s.release() }; error("Pleos STT initialize 응답 없음") })[0]
         if (err != null) { runCatching { s.release() }; error("Pleos STT initialize 실패: $err") }
         stt = s
         s

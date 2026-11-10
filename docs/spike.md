@@ -101,6 +101,14 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - Open-Meteo 날씨·일몰 정상(일몰 17:26).
 - 실제 차량 실내등 색 변화는 에뮬레이터에서 눈으로 확인할 수 없음 → **사무국 문의: 실차 Light Set 허용 범위**.
 
+### 제출용 release 빌드 점검 (11/10)
+- 서명: 자체 키스토어 `car-app/keystore/chaz-release.jks`(gitignore), 비밀번호는 `local.properties` 만. 없으면 디버그 키로 서명.
+- **R8 부분 최적화(packageScope = androidx·kotlin) 는 시작 즉시 크래시**: `IllegalAccessError: Class kotlin.collections.k extended by class da0 is inaccessible`. 전체 최적화는 MediaPipe·Pleos SDK·JNI keep 규칙이 필요 → 제출본은 R8 끔.
+- 용량: R8 켬 77MB(크래시) / 끔 **104MB**. 큰 것: MediaPipe 네이티브 x86_64 19MB·arm64 15MB, selfie_multiclass 모델 16MB, dex. 에뮬레이터 전용(x86_64만)이면 약 85MB.
+- 깨끗한 설치: 카메라·위치·마이크 권한 대화상자 3개. **첫 실행에 허용해도 미리보기가 '카메라 권한이 필요해요'로 남던 문제** → 화면 복귀 시 권한 재확인 + 판정 중 권한 변경 시 재판정으로 수정.
+- 오프라인(Wi-Fi·데이터 끔): 촬영 4/4·L1·L2·갤러리 저장 정상, 폰 연결은 '서버에 연결할 수 없어요'. **Pleos TTS onDone 이 안 오면 withTimeout 의 취소 예외가 촬영 세션까지 죽여 '준비'에서 멈추던 문제** → 시간 초과를 일반 예외로 바꿔 안내만 건너뛰고 촬영은 계속.
+- release 는 debuggable 이 아니라 `run-as` 로 결과 파일을 꺼낼 수 없음 → 갤러리(Pictures/Cha-z) 또는 디버그 빌드로.
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 

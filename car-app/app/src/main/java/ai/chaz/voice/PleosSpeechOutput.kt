@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import ai.pleos.playground.tts.TextToSpeech as PleosTts
 import ai.pleos.playground.tts.constant.ErrorType as TtsError
 import ai.pleos.playground.tts.constant.Mode as TtsMode
@@ -42,7 +42,8 @@ class PleosSpeechOutput(context: Context, private val focus: AudioFocus) : Speec
             override fun onSuccess() { init.complete(null) }
             override fun onFailure(error: TtsError) { init.complete(error) }
         })
-        val err = withTimeout(6_000) { init.await() }
+        // init 은 성공 시 null 로 끝나므로 감싸서 시간 초과와 구분한다
+        val err = (withTimeoutOrNull(6_000) { listOf(init.await()) } ?: run { runCatching { t.release() }; error("Pleos TTS initialize 응답 없음") })[0]
         if (err != null) { runCatching { t.release() }; error("Pleos TTS initialize 실패: $err") }
         t.addEventListener(events)
         tts = t
@@ -61,8 +62,8 @@ class PleosSpeechOutput(context: Context, private val focus: AudioFocus) : Speec
         focus.acquire()
         try {
             withContext(Dispatchers.Main) { t.speak(text, true) }
-            // 한국어 한 글자 ~0.2초 + 합성 여유
-            withTimeout(4_000L + text.length * 250L) { done.await() }
+            // 한국어 한 글자 ~0.15초 + 합성 여유. 시간 초과는 일반 예외로 — withTimeout 의 취소 예외는 촬영 세션까지 죽인다
+            withTimeoutOrNull(2_500L + text.length * 180L) { done.await() } ?: error("Pleos TTS onDone 없음")
         } finally {
             pending = null
             focus.release()

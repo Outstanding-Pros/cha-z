@@ -55,14 +55,27 @@ android {
         buildConfig = true
     }
 
+    // 자체 키스토어 서명: 경로·비밀번호는 local.properties 에서만 (예시는 local.properties.example).
+    // 값이 없으면(클론 직후 등) 디버그 키로 서명해 release 빌드 자체는 되게 둔다.
+    val releaseStore = localProp("RELEASE_STORE_FILE", "").takeIf { it.isNotEmpty() }?.let { rootProject.file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseStore != null) create("release") {
+            storeFile = releaseStore
+            storePassword = localProp("RELEASE_STORE_PASSWORD", "")
+            keyAlias = localProp("RELEASE_KEY_ALIAS", "chaz")
+            keyPassword = localProp("RELEASE_KEY_PASSWORD", "")
+        }
+    }
+
     buildTypes {
         release {
+            // R8 끔: packageScope(androidx·kotlin 만) 부분 최적화는 범위 밖 코드에서 kotlin 클래스 접근이
+            // IllegalAccessError 로 시작 시 크래시(11/10 실측). 전체 최적화는 MediaPipe·Pleos SDK·JNI keep 규칙이
+            // 필요해서 제출 전에는 안전하게 끈다. 용량 영향은 dex 몇 MB 수준.
             optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
+                enable = false
             }
-            // TODO(T18): 자체 키스토어 서명. 지금은 디버그 키로 서명해 에뮬레이터 설치 가능하게 둔다.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (releaseStore != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
     compileOptions {

@@ -7,7 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -78,7 +78,7 @@ class ServerSpeechOutput(context: Context, private val baseUrl: String, private 
         }
         player = mp
         try {
-            withTimeout(mp.duration.toLong().coerceAtLeast(1_000) + 3_000) { done.await() }
+            withTimeoutOrNull(mp.duration.toLong().coerceAtLeast(1_000) + 3_000) { done.await() } ?: error("재생 완료 콜백 없음")
         } finally {
             player = null
             withContext(Dispatchers.Main) { runCatching { mp.release() } }

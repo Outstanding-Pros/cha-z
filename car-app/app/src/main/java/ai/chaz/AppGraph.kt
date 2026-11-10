@@ -327,8 +327,11 @@ class AppGraph(context: Context) {
         }
     }
 
+    @Volatile private var reprobeAgain = false
+
     fun reprobe() {
-        if (_probing.value) return
+        // 판정 중에 권한이 바뀌면(첫 실행 권한 대화상자) 끝난 뒤 한 번 더 판정한다
+        if (_probing.value) { reprobeAgain = true; return }
         _probing.value = true
         scope.launch {
             try {
@@ -346,6 +349,7 @@ class AppGraph(context: Context) {
                 speech.prepare(listOf(phrases.captureStart(CaptureConfig()), phrases.doneParked(), phrases.doneDriving()))
             } finally {
                 _probing.value = false
+                if (reprobeAgain) { reprobeAgain = false; reprobe() }
             }
         }
     }

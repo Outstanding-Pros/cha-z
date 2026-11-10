@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -281,7 +282,12 @@ private fun SourcePreview(source: CameraSource, modifier: Modifier, filter: ai.c
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val needsCamera = source.kind != ai.chaz.capture.SourceKind.RECORDED_VIDEO
-    if (needsCamera && context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+    // 권한 대화상자가 닫히면 액티비티가 다시 RESUMED 가 된다 → 그때 권한을 다시 확인 (첫 실행에 허용해도 안 뜨던 문제)
+    val lifecycleState by owner.lifecycle.currentStateFlow.collectAsState()
+    val cameraGranted = remember(lifecycleState) {
+        context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+    if (needsCamera && !cameraGranted) {
         Box(modifier.background(Tokens.surface2), contentAlignment = Alignment.Center) {
             Text("카메라 권한이 필요해요", color = Tokens.text2, fontSize = 16.sp)
         }

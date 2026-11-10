@@ -7,3 +7,10 @@ CHAZ_SERVER_URL=http://10.0.2.2:8787
 # T10 Supabase 연동 시 채움
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
+
+# release 서명 (없으면 디버그 키로 서명). 키스토어 만들기:
+# keytool -genkeypair -keystore keystore/chaz-release.jks -alias chaz -keyalg RSA -keysize 2048 -validity 10000
+RELEASE_STORE_FILE=keystore/chaz-release.jks
+RELEASE_STORE_PASSWORD=
+RELEASE_KEY_ALIAS=chaz
+RELEASE_KEY_PASSWORD=
