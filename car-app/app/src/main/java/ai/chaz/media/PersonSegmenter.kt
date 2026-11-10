@@ -74,6 +74,67 @@ object MaskMath {
         return best
     }
 
+    fun alphaF(p: Float): Float {
+        val t = ((p - LOW) / (HIGH - LOW)).coerceIn(0f, 1f)
+        return t * t * (3 - 2 * t)
+    }
+
+    /**
+     * 누끼 다듬기 (모델 해상도에서): 알파 곡선 → 가장 큰 덩어리만 남김(떠 있는 핸들 조각·좌석 잡음 제거)
+     * → 1칸 침식(창문 빛이 번진 테두리 제거) → 박스 블러 2회(가장자리 페더). 반환은 0~1 알파.
+     */
+    fun refine(person: FloatArray, w: Int, h: Int): FloatArray {
+        val a = FloatArray(w * h) { alphaF(person[it]) }
+        keepLargest(a, w, h, 0.1f)
+        return boxBlur(boxBlur(erode(a, w, h), w, h), w, h)
+    }
+
+    /** threshold 이상인 4방향 연결 덩어리 중 가장 큰 것만 남기고 나머지는 0으로. */
+    fun keepLargest(a: FloatArray, w: Int, h: Int, threshold: Float) {
+        val label = IntArray(w * h)
+        val stack = IntArray(w * h)
+        var next = 0; var best = 0; var bestSize = 0
+        for (s in a.indices) {
+            if (a[s] < threshold || label[s] != 0) continue
+            next++
+            var sp = 0; stack[sp++] = s; label[s] = next
+            var size = 0
+            while (sp > 0) {
+                val i = stack[--sp]; size++
+                val x = i % w
+                fun push(j: Int) { if (a[j] >= threshold && label[j] == 0) { label[j] = next; stack[sp++] = j } }
+                if (x > 0) push(i - 1)
+                if (x < w - 1) push(i + 1)
+                if (i >= w) push(i - w)
+                if (i < w * (h - 1)) push(i + w)
+            }
+            if (size > bestSize) { bestSize = size; best = next }
+        }
+        for (i in a.indices) if (label[i] != best) a[i] = 0f
+    }
+
+    fun erode(a: FloatArray, w: Int, h: Int): FloatArray = FloatArray(w * h) { i ->
+        val x = i % w; val y = i / w
+        var m = a[i]
+        for (dy in -1..1) for (dx in -1..1) {
+            val xx = (x + dx).coerceIn(0, w - 1); val yy = (y + dy).coerceIn(0, h - 1)
+            m = minOf(m, a[yy * w + xx])
+        }
+        m
+    }
+
+    /** 반경 1 분리형 박스 블러. */
+    fun boxBlur(a: FloatArray, w: Int, h: Int): FloatArray {
+        val t = FloatArray(w * h) { i ->
+            val x = i % w
+            (a[i - x + (x - 1).coerceAtLeast(0)] + a[i] + a[i - x + (x + 1).coerceAtMost(w - 1)]) / 3f
+        }
+        return FloatArray(w * h) { i ->
+            val x = i % w; val y = i / w
+            (t[(y - 1).coerceAtLeast(0) * w + x] + t[i] + t[(y + 1).coerceAtMost(h - 1) * w + x]) / 3f
+        }
+    }
+
     private const val LOW = 0.5f
     private const val HIGH = 0.85f
 }
@@ -100,7 +161,8 @@ class MediaPipePersonSegmenter(private val context: Context) : PersonSegmenter {
                 val fb = ByteBufferExtractor.extract(bg).order(ByteOrder.nativeOrder()).asFloatBuffer()
                 val person = FloatArray(w * h) { 1f - fb.get(it) }
                 // ALPHA_8 + DST_IN 조합이 기기마다 다르게 그려져서, 알파만 쓴 ARGB 마스크로 만든다
-                val pixels = IntArray(w * h) { MaskMath.alpha(person[it]) shl 24 }
+                val soft = MaskMath.refine(person, w, h)
+                val pixels = IntArray(w * h) { (soft[it] * 255).toInt().coerceIn(0, 255) shl 24 }
                 val box = MaskMath.largestBlob(person, w, h) ?: return@withContext null
                 val alpha = Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
                 val scaled = if (w == image.width && h == image.height) alpha else Bitmap.createScaledBitmap(alpha, image.width, image.height, true)

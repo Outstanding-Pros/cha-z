@@ -2,6 +2,9 @@ package ai.chaz.media
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
@@ -51,7 +54,7 @@ class CutFrameRenderer(private val segmenter: PersonSegmenter) : LayoutRenderer 
                 // 인물
                 val interior = cut.interior
                 val mask = masks[i]
-                if (interior != null && mask != null) drawCutout(cv, interior, mask, cell, leftSide = i % 2 == 1)
+                if (interior != null && mask != null) drawCutout(cv, interior, mask, cell, leftSide = i % 2 == 1, bg = bg)
                 else if (interior != null) drawInset(cv, interior, cell, c.bg, s)
                 cv.restore()
                 // 컷 번호
@@ -83,24 +86,39 @@ class CutFrameRenderer(private val segmenter: PersonSegmenter) : LayoutRenderer 
         }
     }
 
-    /** 인물 누끼를 칸 높이의 92%로 키워 칸 아래쪽에 세운다. 홀짝 칸마다 좌우를 바꿔 단조롭지 않게. */
-    private fun drawCutout(cv: Canvas, interior: Bitmap, mask: PersonMask, cell: RectF, leftSide: Boolean) {
+    /**
+     * 인물 누끼를 칸 높이의 92%로 키워 칸 아래쪽에 세운다. 홀짝 칸마다 좌우를 바꿔 단조롭지 않게.
+     * 배경 톤 맞춤(색 행렬) + 라이트 랩(가장자리에 배경 색)으로 '오려 붙인' 느낌을 줄인다.
+     */
+    private fun drawCutout(cv: Canvas, interior: Bitmap, mask: PersonMask, cell: RectF, leftSide: Boolean, bg: Bitmap?) {
         val pad = ((mask.bottom - mask.top) * 0.04f).toInt()
+        val sidePad = ((mask.right - mask.left) * 0.12f).toInt() // 흐린 가장자리·손이 상자에 잘려 직선이 생기지 않게
         val box = Rect(
-            (mask.left - pad).coerceAtLeast(0), (mask.top - pad).coerceAtLeast(0),
-            (mask.right + pad).coerceAtMost(interior.width), mask.bottom.coerceAtMost(interior.height),
+            (mask.left - sidePad).coerceAtLeast(0), (mask.top - pad).coerceAtLeast(0),
+            (mask.right + sidePad).coerceAtMost(interior.width), mask.bottom.coerceAtMost(interior.height),
         )
         val cut = Bitmap.createBitmap(interior, box.left, box.top, box.width(), box.height()).copy(Bitmap.Config.ARGB_8888, true)
             .apply { setHasAlpha(true) } // JPEG 원본은 hasAlpha=false → 누끼 바깥이 검게 나오지 않게
         val alpha = Bitmap.createBitmap(mask.alpha, box.left, box.top, box.width(), box.height())
-        Canvas(cut).drawBitmap(alpha, 0f, 0f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) })
+        val cc = Canvas(cut)
+        cc.drawBitmap(alpha, 0f, 0f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) })
+        // 아래 30%는 서서히 투명하게 — 핸들·레버 조각과 잘린 아랫단이 대시보드에 녹아들게
+        val fadeTop = box.height() * 0.70f
+        cc.drawRect(0f, fadeTop, box.width().toFloat(), box.height().toFloat(), Paint().apply {
+            shader = LinearGradient(0f, fadeTop, 0f, box.height().toFloat(), 0xFF000000.toInt(), 0x00000000, Shader.TileMode.CLAMP)
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        })
 
         var h = cell.height() * 0.92f
         var w = h * box.width() / box.height()
         if (w > cell.width() * 0.75f) { w = cell.width() * 0.75f; h = w * box.height() / box.width() }
         val cx = cell.centerX() + (if (leftSide) -1 else 1) * cell.width() * 0.16f
         val dst = RectF(cx - w / 2, cell.bottom - h, cx + w / 2, cell.bottom)
-        cv.drawBitmap(cut, null, dst, Draw.filterPaint())
+        val bgMean = bg?.let { Draw.meanColor(it, step = 12) }
+        val paint = Draw.filterPaint()
+        if (bgMean != null) paint.colorFilter = ColorMatrixColorFilter(Draw.toneMatch(Draw.meanColor(cut, step = 8), bgMean))
+        cv.drawBitmap(cut, null, dst, paint)
+        if (bgMean != null) Draw.lightWrap(cv, cut, dst, bgMean, radius = box.width() * 0.02f)
         cut.recycle()
     }
 
