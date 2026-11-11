@@ -14,7 +14,7 @@ class IntentClient(private val baseUrl: String, private val timeoutMs: Long = 2_
     suspend fun classify(text: String): Intent = withTimeoutOrNull(timeoutMs) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val conn = (URL("$baseUrl/intent/parse").openConnection() as HttpURLConnection).apply {
+                val conn = ServerHttp.open("$baseUrl/intent/parse").apply {
                     requestMethod = "POST"
                     doOutput = true
                     connectTimeout = timeoutMs.toInt()

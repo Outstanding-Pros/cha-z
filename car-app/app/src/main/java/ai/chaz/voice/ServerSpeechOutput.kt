@@ -1,5 +1,6 @@
 package ai.chaz.voice
 
+import ai.chaz.sync.ServerHttp
 import android.content.Context
 import android.media.MediaPlayer
 import kotlinx.coroutines.CompletableDeferred
@@ -45,7 +46,7 @@ class ServerSpeechOutput(context: Context, private val baseUrl: String, private 
     private suspend fun fetch(text: String): File = withContext(Dispatchers.IO) {
         val f = File(cacheDir, sha1(text) + ".mp3")
         if (f.exists() && f.length() > 0) return@withContext f
-        val conn = (URL("$baseUrl/voice/tts").openConnection() as HttpURLConnection).apply {
+        val conn = ServerHttp.open("$baseUrl/voice/tts").apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 3_000

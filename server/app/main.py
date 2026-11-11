@@ -46,7 +46,9 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from . import sync  # noqa: E402
 
 from . import camera  # noqa: E402
+from .guard import guard  # noqa: E402
 
+app.middleware("http")(guard)  # 외부(Cloudflare Tunnel·공인 IP) 요청 보호 — guard.py
 app.include_router(sync.router)
 app.include_router(camera.router)
 

@@ -20,6 +20,13 @@ copy .env.example .env      # BIZROUTER_API_KEY, IMAGE_PROVIDER 설정
 - 폰과 PC 는 같은 네트워크여야 하고, Windows 방화벽에서 8787·8788 인바운드를 허용해야 한다.
 - `CHAZ_HTTPS_PORT=0` 이면 HTTPS 를 끈다(QR 은 http, 폰 카메라 모드는 쓸 수 없음).
 
+### 외부 공개 (Cloudflare Tunnel, `<서버 도메인>`)
+`app/guard.py` 가 외부 요청(Cloudflare 경유 또는 공인 IP)만 막는다. 이 PC·LAN 요청은 그대로.
+- 폰 경로(`/app`, `/s/`, 페어링 수락, 사진 받기·공유, 카메라 프레임, `/health`)는 토큰 없이 허용.
+- 나머지(차량 전용·AI)는 `X-Chaz-Token` 이 `.env` 의 `CHAZ_APP_TOKEN` 과 같아야 한다. 차량 앱은 `local.properties` 의 같은 값을 쓴다.
+- AI 경로(이미지·TTS·STT·인텐트)는 IP 당 분당 `CHAZ_AI_PER_MIN`(20), 하루 전체 `CHAZ_DAILY_AI_LIMIT`(500) 회 상한.
+- `.env` 에 `PUBLIC_BASE_URL=https://<서버 도메인>` 를 넣으면 페어링 QR·공유 링크가 도메인 주소가 된다.
+
 ## 설정 (.env)
 
 | 키 | 설명 |

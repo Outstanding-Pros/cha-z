@@ -29,7 +29,7 @@ class ChazServer(val baseUrl: String) {
 
     private suspend fun fetchHealth(): Health = withContext(Dispatchers.IO) {
         try {
-            val conn = (URL("$baseUrl/health").openConnection() as HttpURLConnection).apply {
+            val conn = ServerHttp.open("$baseUrl/health").apply {
                 connectTimeout = 2_500
                 readTimeout = 2_500
             }

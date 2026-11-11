@@ -1,5 +1,6 @@
 package ai.chaz.voice
 
+import ai.chaz.sync.ServerHttp
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -85,7 +86,7 @@ class ServerSpeechInput(private val context: Context, private val baseUrl: Strin
 
     private fun upload(wav: ByteArray): String {
         val boundary = "----chaz" + System.nanoTime()
-        val conn = (URL("$baseUrl/voice/stt").openConnection() as HttpURLConnection).apply {
+        val conn = ServerHttp.open("$baseUrl/voice/stt").apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 3_000

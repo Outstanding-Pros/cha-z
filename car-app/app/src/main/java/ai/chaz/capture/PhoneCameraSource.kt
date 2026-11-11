@@ -1,5 +1,6 @@
 package ai.chaz.capture
 
+import ai.chaz.sync.ServerHttp
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -114,7 +115,7 @@ class PhoneCameraSource(
     override suspend fun snapshot(): Bitmap? = latest.value?.takeIf { System.currentTimeMillis() - latestAt < 2_000 }
 
     private fun open(path: String, readTimeoutMs: Int) =
-        (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+        ServerHttp.open(baseUrl + path).apply {
             connectTimeout = 2_000
             readTimeout = readTimeoutMs
             useCaches = false
@@ -128,7 +129,7 @@ class PhoneCameraSource(
         /** CapabilityProbe 용: 폰 카메라 모드가 켜져 있는지. */
         suspend fun online(baseUrl: String, carId: String): Boolean? = withContext(Dispatchers.IO) {
             runCatching {
-                val conn = (URL("$baseUrl/sync/camera/status?carDeviceId=$carId").openConnection() as HttpURLConnection)
+                val conn = ServerHttp.open("$baseUrl/sync/camera/status?carDeviceId=$carId")
                     .apply { connectTimeout = 2_000; readTimeout = 2_000 }
                 try {
                     if (conn.responseCode != 200) null

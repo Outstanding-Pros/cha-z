@@ -93,7 +93,7 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
             .put("kind", "PHOTO").put("filters", JSONArray(result.filters))
             .put("sourceKinds", JSONArray(result.sourceKinds.map { it.name })).put("createdOn", result.createdOn)
         val boundary = "----chaz" + System.nanoTime()
-        val conn = (URL("$baseUrl/sync/results").openConnection() as HttpURLConnection).apply {
+        val conn = ServerHttp.open("$baseUrl/sync/results").apply {
             requestMethod = "POST"; doOutput = true; connectTimeout = 3_000; readTimeout = 20_000
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         }
@@ -115,7 +115,7 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
     }
 
     private suspend fun http(method: String, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
-        val conn = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+        val conn = ServerHttp.open(baseUrl + path).apply {
             requestMethod = method; connectTimeout = 3_000; readTimeout = 5_000
             if (body != null) { doOutput = true; setRequestProperty("Content-Type", "application/json; charset=utf-8") }
         }
