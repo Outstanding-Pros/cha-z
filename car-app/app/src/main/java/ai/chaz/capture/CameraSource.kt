@@ -29,6 +29,12 @@ interface CameraSource {
     fun createPreview(context: Context, owner: LifecycleOwner): View
     fun releasePreview(view: View)
 
+    /**
+     * 컷 index 를 inMs 뒤에 찍을 예정이라고 미리 알린다 (카운트다운 시작 무렵).
+     * 원격 소스(폰)는 이걸로 셔터 순간에 맞춰 찍게 예약한다. 로컬 카메라는 할 일 없음.
+     */
+    fun scheduleShot(index: Int, inMs: Long) {}
+
     /** 지금 시각의 고해상도 스틸 (컷용). */
     suspend fun capture(): Bitmap
 

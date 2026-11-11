@@ -71,6 +71,23 @@ class CaptureSessionEngineTest {
 
     private fun session(config: CaptureConfig = CaptureConfig()) = Session("s1", 0, config, TriggerSource.SHUTTER_BUTTON)
 
+    @Test fun `원격 소스에는 컷마다 셔터 시각을 2초 이상 미리 알린다 (폰 예약 촬영)`() = runTest {
+        val (engine, store) = setup(introMs = 2_000)
+        val scheduled = mutableListOf<Triple<Int, Long, Long>>() // index, 알린 시각, 예정 셔터 시각
+        val phone = object : CameraSource by FakeCameraSource(CameraRole.INTERIOR, SourceKind.PHONE_CAMERA) {
+            override fun scheduleShot(index: Int, inMs: Long) {
+                val t = testScheduler.currentTime
+                scheduled += Triple(index, t, t + inMs)
+            }
+        }
+        engine.run(session(), listOf(phone) + sources.drop(1), adjusted = false, isDriving = { false })
+
+        assertEquals(listOf(1, 2, 3, 4), scheduled.map { it.first })
+        // 예정 셔터 시각 = 실제 컷 시각 (t0 = 안내 2초 뒤)
+        assertEquals(store.cutTimes.map { it + 2_000L }, scheduled.map { it.third })
+        assertTrue("리드 타임 ${scheduled.map { it.third - it.second }}", scheduled.all { it.third - it.second >= 2_000 })
+    }
+
     @Test fun `12초 4컷 - 3초 간격으로 컷마다 세 소스, 카운트다운 셋둘하나 후 셔터`() = runTest {
         val (engine, store) = setup(introMs = 2_000)
         val result = engine.run(session(), sources, adjusted = false, isDriving = { false })

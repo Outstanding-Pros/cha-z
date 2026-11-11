@@ -7,8 +7,14 @@
 | 폰   | POST /sync/camera/frame (preview) | 0.5초마다 저해상 프레임 → 차량 미리보기·클립·온라인 판정 |
 | 차량 | GET  /sync/camera/status          | 폰 카메라가 켜져 있는지 (최근 4초 안에 프레임)           |
 | 차량 | GET  /sync/camera/latest          | 최신 미리보기 프레임 (after=seq 보다 새것만)             |
-| 차량 | POST /sync/camera/shot            | 폰에 capture.shot 이벤트 → 폰이 고해상 프레임 업로드 → 그 JPEG 를 응답으로 |
+| 차량 | POST /sync/camera/arm             | 예약 촬영: 서버 시각 atMs 에 찍으라고 폰에 capture.shot (카운트다운 '셋' 무렵) |
+| 차량 | GET  /sync/camera/result/{shotId} | 예약한 컷의 JPEG (셔터 시각에 호출, 올 때까지 대기)       |
+| 차량 | POST /sync/camera/shot            | 즉시 촬영 (예약 실패 시 대체): capture.shot → 업로드 → 그 JPEG 를 응답으로 |
 | 폰   | POST /sync/camera/frame (shot)    | shotId 에 해당하는 고해상 프레임                          |
+| 둘다 | GET  /sync/time                   | 서버 시각(ms) — 차량·폰이 서버 시계에 맞춰 예약 시각을 지킨다 |
+
+예약 촬영이 필요한 이유: Cloudflare 를 거치면 이벤트가 폰에 닿기까지 0.3~1.8초. 셔터 순간에 '찍어'를 보내면
+그만큼 늦게 찍힌다. 그래서 2초 이상 앞서 '이 시각에 찍어'를 보내고, 폰이 자기 시계(서버와 맞춘)로 그 순간을 찍는다.
 
 얼굴이 담긴 프레임이라 디스크에 쓰지 않고 메모리에만 잠깐 둔다. 로그에도 남기지 않는다 (CLAUDE.md 규칙 10).
 """
@@ -44,7 +50,25 @@ class _Latest:
 
 
 _latest: dict[str, _Latest] = {}                    # carDeviceId → 최신 미리보기
-_shots: dict[str, tuple[str, asyncio.Future]] = {}  # shotId → (carDeviceId, 결과)
+_shots: dict[str, tuple[str, asyncio.Future, float]] = {}  # shotId → (carDeviceId, 결과, 만든 시각)
+SHOT_TTL_SEC = 30.0
+_shot_at: dict[str, float] = {}  # 예약 촬영 shotId → 셔터 시각(서버 ms), 오차 로그용
+
+
+def _new_shot(car: str) -> tuple[str, asyncio.Future]:
+    now = time.time()
+    for k, v in list(_shots.items()):  # 찾아가지 않은 예약 정리
+        if now - v[2] > SHOT_TTL_SEC:
+            _shots.pop(k, None)
+    shot_id = secrets.token_urlsafe(9)
+    fut: asyncio.Future = asyncio.get_running_loop().create_future()
+    _shots[shot_id] = (car, fut, now)
+    return shot_id, fut
+
+
+@router.get("/sync/time")
+def server_time():
+    return {"t": time.time() * 1000}
 
 
 def _online(car: str) -> _Latest | None:
@@ -57,6 +81,7 @@ async def upload_frame(
     phoneDeviceId: str = Form(..., min_length=8, max_length=64),
     kind: str = Form(..., pattern="^(preview|shot)$"),
     shotId: str | None = Form(None, max_length=64),
+    takenAtMs: float | None = Form(None, description="폰이 실제로 찍은 시각(서버 시계) — 예약 오차 확인용"),
     file: UploadFile = File(...),
 ):
     with _db() as con:
@@ -76,6 +101,9 @@ async def upload_frame(
     if not entry or entry[0] != car:
         raise HTTPException(410, "이미 끝난 촬영이에요")
     fut = entry[1]
+    want = _shot_at.pop(shotId or "", None)
+    if want and takenAtMs:
+        log.info("예약 촬영 오차 %+.0fms (폰이 찍은 시각 - 셔터 시각)", takenAtMs - want)
     if not fut.done():
         fut.set_result(data)
     return {"ok": True}
@@ -101,6 +129,45 @@ class ShotRequest(BaseModel):
     index: int | None = None
 
 
+class ArmRequest(BaseModel):
+    carDeviceId: str = Field(min_length=8, max_length=64)
+    atMs: float = Field(description="찍을 시각 (서버 시계, epoch ms)")
+    index: int | None = None
+
+
+@router.post("/sync/camera/arm")
+async def camera_arm(body: ArmRequest):
+    car = body.carDeviceId
+    if not _online(car):
+        raise HTTPException(409, "폰 카메라가 꺼져 있어요")
+    lead = body.atMs - time.time() * 1000
+    if not -500 < lead < 15_000:
+        raise HTTPException(400, "예약 시각이 맞지 않아요")
+    with _db() as con:
+        phones = _paired_phones(con, car)
+    shot_id, _ = _new_shot(car)
+    _shot_at[shot_id] = body.atMs
+    if len(_shot_at) > 200:
+        _shot_at.pop(next(iter(_shot_at)))
+    payload = {"shotId": shot_id, "index": body.index, "atMs": body.atMs, "at": time.time()}
+    for p in phones:
+        await publish(p, "capture.shot", payload)
+    return {"shotId": shot_id, "leadMs": round(lead)}
+
+
+@router.get("/sync/camera/result/{shot_id}")
+async def camera_result(shot_id: str, carDeviceId: str, waitMs: int = 4000):
+    entry = _shots.get(shot_id)
+    if not entry or entry[0] != carDeviceId:
+        raise HTTPException(404, "없는 촬영이에요")
+    try:
+        data = await asyncio.wait_for(asyncio.shield(entry[1]), min(max(waitMs, 0), 8000) / 1000)
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "폰이 제때 사진을 보내지 않았어요")
+    _shots.pop(shot_id, None)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 @router.post("/sync/camera/shot")
 async def camera_shot(body: ShotRequest):
     car = body.carDeviceId
@@ -108,9 +175,7 @@ async def camera_shot(body: ShotRequest):
         raise HTTPException(409, "폰 카메라가 꺼져 있어요")
     with _db() as con:
         phones = _paired_phones(con, car)
-    shot_id = secrets.token_urlsafe(9)
-    fut: asyncio.Future = asyncio.get_running_loop().create_future()
-    _shots[shot_id] = (car, fut)
+    shot_id, fut = _new_shot(car)
     try:
         payload = {"shotId": shot_id, "sessionId": body.sessionId, "index": body.index, "at": time.time()}
         for p in phones:

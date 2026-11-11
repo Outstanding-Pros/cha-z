@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 PUBLIC_PREFIXES = ("/app", "/s/", "/sync/file/", "/sync/events")
 PUBLIC_EXACT = {
     ("GET", "/health"),
+    ("GET", "/sync/time"),
     ("POST", "/sync/pairing-claim"),
     ("GET", "/sync/results"),
     ("POST", "/sync/share"),

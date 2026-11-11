@@ -91,6 +91,8 @@ class CaptureSessionEngine(
             val words = CaptureRules.countdownWords(interval)
             for (i in 1..cfg.count) {
                 val cutAt = t0 + i * interval
+                // 원격 소스(폰)에 셔터 시각을 미리 알린다 — 네트워크 지연이 있어도 그 순간에 찍히게 (T11)
+                sources.forEach { it.scheduleShot(i, cutAt - now()) }
                 for (k in words downTo 1) {
                     until(cutAt - k * CaptureRules.COUNTDOWN_STEP_MS)
                     countdown = k

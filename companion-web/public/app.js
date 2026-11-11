@@ -148,7 +148,23 @@
   // ---------- P5 실내 카메라 모드 ----------
   // 영상 스트림을 켜 두고, 차량이 capture.shot 을 보내면 그 순간 프레임을 떠서 올린다(지연 0.1초 안팎).
   // 0.5초마다 저해상 프레임도 올린다 → 차량 미리보기·클립, 그리고 '카메라 켜짐' 판정.
-  const cam = { stream: null, facing: 'user', timer: null, busy: false, wake: null, shots: 0 };
+  const cam = { stream: null, facing: 'user', timer: null, busy: false, wake: null, shots: 0, offset: 0, syncTimer: null };
+
+  // 서버 시계 맞추기: 서버시각 - 내시각. 왕복이 가장 짧았던 측정을 쓴다 (오차 ≈ 왕복/2).
+  async function syncClock() {
+    let best = null;
+    for (let i = 0; i < 5; i++) {
+      try {
+        const t0 = Date.now();
+        const r = await fetch('/sync/time', { cache: 'no-store' });
+        const { t } = await r.json();
+        const t1 = Date.now();
+        if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: t - (t0 + t1) / 2 };
+      } catch (e) { /* 다음 시도 */ }
+    }
+    if (best) cam.offset = best.offset;
+  }
+  const serverNow = () => Date.now() + cam.offset;
   const video = $('cam-video');
 
   function camBadge(text, ok) {
@@ -177,11 +193,12 @@
     return new Promise((res) => c.toBlob(res, 'image/jpeg', quality));
   }
 
-  async function upload(kind, blob, shotId) {
+  async function upload(kind, blob, shotId, takenAtMs) {
     const f = new FormData();
     f.append('phoneDeviceId', phoneId);
     f.append('kind', kind);
     if (shotId) f.append('shotId', shotId);
+    if (takenAtMs) f.append('takenAtMs', String(Math.round(takenAtMs)));
     f.append('file', blob, kind + '.jpg');
     const res = await fetch('/sync/camera/frame', { method: 'POST', body: f });
     if (!res.ok) {
@@ -207,13 +224,19 @@
 
   async function onShot(d) {
     if (!cam.stream) return;
+    // 예약 촬영(atMs): 서버 시계 기준 그 순간까지 기다렸다가 찍는다. 이미 지났으면 바로.
+    if (d.atMs) {
+      const wait = d.atMs - serverNow();
+      if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 15000)));
+    }
     try {
+      const takenAt = serverNow();
       const b = await grab(1920, 0.92);
       if (!b) return;
       $('cam-flash').classList.add('on');
       setTimeout(() => $('cam-flash').classList.remove('on'), 60);
       if (navigator.vibrate) navigator.vibrate(40);
-      await upload('shot', b, d.shotId);
+      await upload('shot', b, d.shotId, takenAt);
       cam.shots++;
       $('cam-count').textContent = `${cam.shots}장 찍음`;
     } catch (e) {
@@ -246,6 +269,9 @@
     }
     listen();
     keepAwake();
+    syncClock();
+    clearInterval(cam.syncTimer);
+    cam.syncTimer = setInterval(syncClock, 60000);
     clearInterval(cam.timer);
     cam.timer = setInterval(sendPreview, 500);
     sendPreview();
@@ -253,6 +279,7 @@
 
   function camStop() {
     clearInterval(cam.timer);
+    clearInterval(cam.syncTimer);
     cam.timer = null;
     if (cam.stream) cam.stream.getTracks().forEach((t) => t.stop());
     cam.stream = null;
