@@ -145,7 +145,7 @@ fun EditScreen(graph: AppGraph) {
                     }
                 }
                 Text(
-                    if (layout == Layout.WINDOW_SWAP) "실내 사진의 창밖을 같은 순간의 전방·후방 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
+                    if (layout == Layout.WINDOW_SWAP) "지붕을 열어요 — 좌석과 사람만 남기고 위쪽을 같은 순간의 바깥 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
                     else "풍경을 배경으로 인물을 오려 2~4칸에 담아요. 아래에서 컷을 2~4장 고르세요.",
                     color = Tokens.text2, fontSize = 13.sp,
                 )

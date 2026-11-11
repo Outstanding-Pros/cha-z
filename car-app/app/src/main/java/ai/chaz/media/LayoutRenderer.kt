@@ -10,7 +10,7 @@ import java.io.File
 
 /** L1~L4 (SPEC F5). */
 enum class Layout(val id: String, val label: String) {
-    WINDOW_SWAP("L1", "차창 합성"),
+    WINDOW_SWAP("L1", "오픈카"),
     CUT_FRAME("L2", "컷형 프레임"),
     ROUTE_OVERLAY("L3", "여행 경로"),
     SURROUND_SEQUENCE("L4", "서라운드"),
@@ -83,11 +83,22 @@ interface LayoutRenderer {
 /** 창문 사각형 (원본 이미지 좌표, 시계 방향). */
 data class WindowQuad(val name: String, val source: CameraRole, val points: List<Pair<Float, Float>>)
 
-data class WindowMask(val imageWidth: Int, val imageHeight: Int, val windows: List<WindowQuad>) {
+/**
+ * 고정 실내 카메라의 정적 마스크. windows = 창문 사각형(옛 L1), cabin = 오픈카 L1 에서 남길 실내(좌석·도어 아랫단) 다각형.
+ * cabin 이 있으면 L1 은 지붕·기둥·창 전체를 풍경으로 바꾼다 (horizonY = 풍경 수평선을 맞출 높이).
+ */
+data class WindowMask(
+    val imageWidth: Int,
+    val imageHeight: Int,
+    val windows: List<WindowQuad>,
+    val cabin: List<Pair<Float, Float>>? = null,
+    val horizonY: Float? = null,
+) {
     companion object {
         fun parse(json: String): WindowMask {
             val j = JSONObject(json)
             val ws = j.getJSONArray("windows")
+            val cabin = j.optJSONArray("cabin")?.let { a -> (0 until a.length()).map { k -> a.getJSONArray(k).let { it.getDouble(0).toFloat() to it.getDouble(1).toFloat() } } }
             return WindowMask(
                 j.getInt("imageWidth"), j.getInt("imageHeight"),
                 (0 until ws.length()).map { i ->
@@ -99,6 +110,8 @@ data class WindowMask(val imageWidth: Int, val imageHeight: Int, val windows: Li
                         (0 until q.length()).map { k -> q.getJSONArray(k).let { it.getDouble(0).toFloat() to it.getDouble(1).toFloat() } },
                     )
                 },
+                cabin = cabin,
+                horizonY = if (j.has("horizonY")) j.getDouble("horizonY").toFloat() else null,
             )
         }
 
