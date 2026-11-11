@@ -1,5 +1,6 @@
 package ai.chaz.media
 
+import ai.chaz.capture.CameraRole
 import ai.chaz.capture.CaptureSessionEngine
 import ai.chaz.capture.SourceKind
 import ai.chaz.data.Cut
@@ -60,6 +61,15 @@ class ResultComposer(
         else -> renderers.containsKey(layout)
     }
 
+    /**
+     * 찍어 둔 컷 기준. L1 창문 마스크는 고정 위치 차량 카메라 전용이라, 실내를 폰으로 찍은 컷이 하나라도 있으면 L1 불가
+     * (지금 카메라가 웹캠으로 돌아와 있어도 컷은 폰 각도라 창문 위치가 안 맞는다).
+     */
+    fun available(layout: Layout, cuts: List<Cut>): Boolean =
+        available(layout) && (layout != Layout.WINDOW_SWAP || cuts.none(::shotByPhone))
+
+    private fun shotByPhone(c: Cut) = c.frames.any { it.role == CameraRole.INTERIOR && it.source == SourceKind.PHONE_CAMERA }
+
     /** 라이브 미리보기용 (세션 전): 오늘 날짜 + 현재 소스 종류. */
     suspend fun previewOptions(kinds: Set<SourceKind>): RenderOptions = RenderOptions(
         stamp = StampInfo(dateText = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date())),
@@ -89,6 +99,7 @@ class ResultComposer(
     /** preview = true 면 절반 해상도로 빠르게. */
     suspend fun render(layout: Layout, cuts: List<Cut>, opts: RenderOptions, preview: Boolean): Bitmap {
         val r = renderers[layout] ?: error("${layout.label} 레이아웃은 아직 준비 중이에요")
+        if (!available(layout, cuts)) error("폰 카메라로 찍은 컷은 ${layout.label}을 쓸 수 없어요")
         val imgs = cuts.take(r.maxCuts).map { images(it, if (preview) 2 else 1) }
         return r.render(imgs, opts, if (preview) 0.5f else 1f)
     }

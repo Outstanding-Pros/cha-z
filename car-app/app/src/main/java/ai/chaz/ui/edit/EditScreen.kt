@@ -68,13 +68,13 @@ fun EditScreen(graph: AppGraph) {
     val cuts = r.cuts
     val prefs = graph.previewPrefs.value
     var layout by remember(r) {
-        mutableStateOf(prefs.layout?.takeIf { composer.available(it) } ?: if (composer.available(Layout.WINDOW_SWAP)) Layout.WINDOW_SWAP else Layout.CUT_FRAME)
+        mutableStateOf(prefs.layout?.takeIf { composer.available(it, cuts) } ?: if (composer.available(Layout.WINDOW_SWAP, cuts)) Layout.WINDOW_SWAP else Layout.CUT_FRAME)
     }
     var filter by remember(r) { mutableStateOf(prefs.filter) }
     // 기본 셀렉: L1 = 가운데 컷 하나, L2 = 앞에서부터 최대 4컷
     var single by remember(r) { mutableStateOf(cuts.getOrNull(cuts.size / 2)?.index ?: 1) }
     var multi by remember(r) { mutableStateOf(cuts.take(4).map { it.index }.toSet()) }
-    var color by remember { mutableStateOf(FrameColor.WHITE) }
+    var color by remember { mutableStateOf(FrameColor.FILM) }
     var stamp by remember { mutableStateOf(true) }
     var preview by remember { mutableStateOf<Bitmap?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -140,8 +140,8 @@ fun EditScreen(graph: AppGraph) {
                 Text("레이아웃", color = Tokens.text2, fontSize = 13.sp)
                 FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME).forEach { l ->
-                        val ok = composer.available(l)
-                        Chip("${l.id} ${l.label}" + if (ok) "" else " (불가)", selected = layout == l) { if (ok) layout = l }
+                        val ok = composer.available(l, cuts)
+                        Chip("${l.id} ${l.label}" + if (ok) "" else " (폰 촬영 불가)".takeIf { l == Layout.WINDOW_SWAP && composer.available(l) } ?: " (불가)", selected = layout == l) { if (ok) layout = l }
                     }
                 }
                 Text(

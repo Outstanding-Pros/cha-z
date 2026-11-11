@@ -17,7 +17,9 @@ enum class Layout(val id: String, val label: String) {
 }
 
 enum class FrameColor(val label: String, val bg: Int, val fg: Int, val sub: Int) {
-    WHITE("화이트", 0xFFF6F4EF.toInt(), 0xFF16181B.toInt(), 0xFF6B7078.toInt()),
+    /** 35mm 필름 스트립: 검은 띠 + 구멍 + 호박색 가장자리 글씨. L2 기본. */
+    FILM("필름", 0xFF121110.toInt(), 0xFFF1E6D2.toInt(), 0xFFE0A040.toInt()),
+    WHITE("화이트", 0xFFF7F2E8.toInt(), 0xFF26221E.toInt(), 0xFF8A8076.toInt()),
     BLACK("블랙", 0xFF0B0C0E.toInt(), 0xFFFFFFFF.toInt(), 0xFF9AA0A6.toInt()),
     OCEAN("오션", 0xFF1D6F8C.toInt(), 0xFFFFFFFF.toInt(), 0xFFCDEBF2.toInt()),
 }
@@ -33,7 +35,7 @@ data class StampInfo(
 
 data class RenderOptions(
     val stamp: StampInfo,
-    val frameColor: FrameColor = FrameColor.WHITE,
+    val frameColor: FrameColor = FrameColor.FILM,
     val showStamp: Boolean = true,
     /** 색 필터 (미리보기에서 고른 값이 기본). 사진 부분에만 적용하고 프레임 색은 그대로 둔다. */
     val filter: ColorPreset = ColorPreset.ORIGINAL,

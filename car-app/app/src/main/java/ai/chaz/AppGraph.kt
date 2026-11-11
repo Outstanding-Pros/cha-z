@@ -167,6 +167,9 @@ class AppGraph(context: Context) {
     private val vehicleState: VehicleStateProvider
         get() = if (availability.selectedId(Feature.VEHICLE_STATE) == ProbeChains.Ids.VEHICLE_PLEOS) pleosVehicleState else FakeVehicleStateProvider()
     val composer by lazy {
+        ai.chaz.media.Draw.handwriting = runCatching {
+            android.graphics.Typeface.createFromAsset(appContext.assets, "fonts/NanumPenScript-Regular.ttf")
+        }.getOrNull()
         val seg = object : PersonSegmenter {
             override val name get() = segmenter.name
             override suspend fun segment(image: android.graphics.Bitmap) = segmenter.segment(image)
@@ -250,9 +253,9 @@ class AppGraph(context: Context) {
             val session = capture.lastResult.value ?: return SendOutcome.NO_RESULT
             if (session.cuts.isEmpty()) return SendOutcome.NO_RESULT
             val prefs = previewPrefs.value
-            val layout = prefs.layout?.takeIf { composer.available(it) } ?: Layout.CUT_FRAME
+            val layout = prefs.layout?.takeIf { composer.available(it, session.cuts) } ?: Layout.CUT_FRAME
             runCatching {
-                val opts = composer.options(session, ai.chaz.media.FrameColor.WHITE, true, prefs.filter)
+                val opts = composer.options(session, ai.chaz.media.FrameColor.FILM, true, prefs.filter)
                 composer.save(session.session.id, layout, composer.render(layout, session.cuts, opts, preview = false), opts)
             }.getOrElse { return SendOutcome.FAILED }
         }

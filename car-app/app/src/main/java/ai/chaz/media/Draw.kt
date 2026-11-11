@@ -16,6 +16,79 @@ import android.graphics.Typeface
 /** 렌더러 공통 그리기 도구. */
 internal object Draw {
     val BOLD: Typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    private val MONO_BOLD: Typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+
+    /** 손글씨 캡션 글꼴 (assets/fonts/NanumPenScript, OFL). 앱 시작 시 AppGraph 가 채운다. 없으면 기본 글꼴. */
+    @Volatile var handwriting: Typeface? = null
+
+    fun hand(color: Int, size: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = color
+        textSize = size
+        typeface = handwriting ?: Typeface.DEFAULT
+    }
+
+    // ---- 필름 감성 효과 (L2) ----
+
+    /** 필름 입자 타일 (회색 128 ± 잡음). OVERLAY 로 겹쳐 그린다. 고정 시드라 미리보기와 결과물이 같다. */
+    private val grainTile: Bitmap by lazy {
+        val n = 256
+        val rnd = java.util.Random(7)
+        val px = IntArray(n * n) {
+            val v = (128 + rnd.nextGaussian() * 38).toInt().coerceIn(0, 255)
+            Color.rgb(v, v, v)
+        }
+        Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888)
+    }
+
+    fun grain(canvas: Canvas, area: RectF, scale: Float, alpha: Int = 46) {
+        val shader = android.graphics.BitmapShader(grainTile, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
+        // 결과물 해상도에서도 입자가 너무 잘아지지 않게 키운다
+        val k = 1.5f * scale.coerceAtLeast(0.5f)
+        shader.setLocalMatrix(android.graphics.Matrix().apply { setScale(k, k) })
+        canvas.drawRect(area, Paint().apply {
+            this.shader = shader
+            this.alpha = alpha
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.OVERLAY)
+        })
+    }
+
+    /** 가장자리를 어둡게 (필름 카메라 렌즈 느낌). */
+    fun vignette(canvas: Canvas, area: RectF, strength: Float = 0.55f) {
+        val r = kotlin.math.hypot(area.width(), area.height()) / 2f
+        canvas.drawRect(area, Paint().apply {
+            shader = android.graphics.RadialGradient(
+                area.centerX(), area.centerY(), r,
+                intArrayOf(0x00000000, 0x00000000, Color.argb((255 * strength).toInt(), 0, 0, 0)),
+                floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP,
+            )
+        })
+    }
+
+    /** 배경을 살짝 흐리게 (얕은 심도 — 인물이 붙여 넣은 듯 떠 보이지 않게). factor = 줄였다 키우는 배수. */
+    fun soften(bmp: Bitmap, factor: Int = 4): Bitmap {
+        val small = Bitmap.createScaledBitmap(bmp, (bmp.width / factor).coerceAtLeast(1), (bmp.height / factor).coerceAtLeast(1), true)
+        val out = Bitmap.createScaledBitmap(small, (bmp.width / 2).coerceAtLeast(1), (bmp.height / 2).coerceAtLeast(1), true)
+        if (small !== out) small.recycle()
+        return out
+    }
+
+    private val DATE = Regex("(\\d{2})(\\d{2})\\D(\\d{1,2})\\D(\\d{1,2})")
+
+    /** "2026.11.12" → "'26 11 12" (일회용 카메라 날짜 각인). */
+    fun filmDate(dateText: String): String =
+        DATE.find(dateText)?.destructured?.let { (_, yy, m, d) -> "'$yy ${m.padStart(2, '0')} ${d.padStart(2, '0')}" } ?: dateText
+
+    /** 주황색 디지털 날짜 각인. (right, baseline) 기준 오른쪽 정렬. */
+    fun dateStamp(canvas: Canvas, text: String, right: Float, baseline: Float, size: Float) {
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFF9A3C.toInt()
+            textSize = size
+            typeface = MONO_BOLD
+            letterSpacing = 0.08f
+            setShadowLayer(size * 0.35f, 0f, 0f, 0xCCFF5A1F.toInt())
+        }
+        canvas.drawText(text, right - p.measureText(text), baseline, p)
+    }
 
     fun filterPaint() = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
