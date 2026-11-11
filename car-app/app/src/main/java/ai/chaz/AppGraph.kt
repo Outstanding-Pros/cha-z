@@ -94,7 +94,7 @@ class AppGraph(context: Context) {
     val driving = DrivingGateHub(scope)
     val debugGate = DebugDrivingGate()
 
-    private val cameraFactory = CameraSourceFactory(appContext, availability)
+    private val cameraFactory = CameraSourceFactory(appContext, availability, BuildConfig.CHAZ_SERVER_URL, DeviceIdentity.carId(appContext))
     private val _cameras = MutableStateFlow<List<CameraSource>>(emptyList())
     /** 현재 선택된 카메라 소스 (실내·전방·후방). 판정이 끝날 때마다 다시 만든다. */
     val cameras: StateFlow<List<CameraSource>> = _cameras.asStateFlow()
@@ -305,8 +305,28 @@ class AppGraph(context: Context) {
     private val _probing = MutableStateFlow(false)
     val probing: StateFlow<Boolean> = _probing.asStateFlow()
 
+    private var phoneCamWatch: Job? = null
+
+    /** T11: 폰 '실내 카메라 모드'가 켜지거나 꺼지면 실내 소스를 다시 판정한다. 촬영 중에는 바꾸지 않는다. */
+    private fun watchPhoneCamera() {
+        if (phoneCamWatch?.isActive == true) return
+        phoneCamWatch = scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(3_000)
+                if (!foreground || _probing.value || capture.model.value.state is AppState.Capturing) continue
+                val online = ai.chaz.capture.PhoneCameraSource.online(BuildConfig.CHAZ_SERVER_URL, phone.carId) ?: continue
+                val usingPhone = availability.selectedId(Feature.CAMERA_INTERIOR) == ProbeChains.Ids.INTERIOR_PHONE
+                if (online != usingPhone) {
+                    withContext(Dispatchers.Default) { probe.probe(Feature.CAMERA_INTERIOR) }
+                    if (capture.model.value.state !is AppState.Capturing) rebuildCameras()
+                }
+            }
+        }
+    }
+
     fun start() {
         reprobe()
+        watchPhoneCamera()
         scope.launch {
             driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
         }

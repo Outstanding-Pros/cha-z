@@ -87,11 +87,10 @@ def _sign(result_id: str, exp: int) -> str:
     return hmac.new(_secret(), f"{result_id}:{exp}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def public_base() -> str:
-    """폰이 접속할 주소. PUBLIC_BASE_URL 이 없으면 이 PC 의 LAN IP."""
-    env = os.getenv("PUBLIC_BASE_URL")
-    if env:
-        return env.rstrip("/")
+HTTPS_PORT: int | None = None  # main 이 HTTPS 리스너를 띄우면 채운다 (T11 — 폰 카메라는 HTTPS 필요)
+
+
+def lan_ip() -> str:
     ip = "127.0.0.1"
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -100,7 +99,17 @@ def public_base() -> str:
         s.close()
     except OSError:
         pass
-    return f"http://{ip}:{PORT}"
+    return ip
+
+
+def public_base() -> str:
+    """폰이 접속할 주소. PUBLIC_BASE_URL 이 없으면 이 PC 의 LAN IP (HTTPS 리스너가 있으면 그쪽)."""
+    env = os.getenv("PUBLIC_BASE_URL")
+    if env:
+        return env.rstrip("/")
+    if HTTPS_PORT:
+        return f"https://{lan_ip()}:{HTTPS_PORT}"
+    return f"http://{lan_ip()}:{PORT}"
 
 
 def _file_url(result_id: str) -> str:

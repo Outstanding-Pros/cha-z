@@ -36,9 +36,26 @@
 
   <!-- P2 받은 세션·완성본 -->
   <section id="p2" hidden>
+    <button id="cam-go" class="primary wide">📷 실내 카메라로 쓰기</button>
+    <p class="sub">대시보드에 폰을 세워 두면 차에서 “차즈”라고 할 때 이 폰이 실내 사진을 찍어요.</p>
     <h2 class="section">받은 사진</h2>
     <p id="empty" class="sub">아직 받은 사진이 없어요. 차에서 “차즈 폰으로 보내줘”라고 말해 보세요.</p>
     <div id="grid" class="grid"></div>
+  </section>
+
+  <!-- P5 실내 카메라 모드 -->
+  <section id="p5" hidden>
+    <div class="cam">
+      <video id="cam-video" playsinline muted autoplay></video>
+      <div id="cam-flash"></div>
+      <div id="cam-badge" class="pill">카메라 준비 중…</div>
+      <div id="cam-count"></div>
+    </div>
+    <p id="cam-text" class="sub">폰을 대시보드에 세워 실내가 보이게 놓아 주세요. 화면은 꺼지지 않아요.</p>
+    <div class="row">
+      <button id="cam-flip">전면/후면 전환</button>
+      <button id="cam-stop" class="ghost">카메라 모드 끝내기</button>
+    </div>
   </section>
 
   <!-- P4 저장·공유 -->

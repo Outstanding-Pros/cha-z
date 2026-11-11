@@ -2,6 +2,8 @@ package ai.chaz.platform
 
 import ai.chaz.capture.CameraInventory
 import ai.chaz.capture.CameraRole
+import ai.chaz.capture.PhoneCameraSource
+import ai.chaz.sync.DeviceIdentity
 import ai.chaz.media.MediaPipePersonSegmenter
 import ai.chaz.platform.driving.CarUxDrivingGate
 import ai.chaz.platform.driving.VehicleGearDrivingGate
@@ -44,6 +46,7 @@ object ProbeChains {
         const val EXTERIOR_RECORDED = "fallback.recorded-video"
         const val INTERIOR_VEHICLE = "vehicle.camera.interior"
         const val INTERIOR_WEBCAM = "emulator.webcam"
+        const val INTERIOR_PHONE = "phone.companion"
 
         const val SEGMENTER_MEDIAPIPE = "mediapipe.segmenter"
         const val SPOTS_OVERPASS = "overpass.tourapi"
@@ -121,7 +124,13 @@ object ProbeChains {
                     val i = cameras.byRole(CameraRole.INTERIOR).filter { it.roleSource.startsWith("AUTOMOTIVE") }
                     if (i.isEmpty()) ProbeResult.Fail("AUTOMOTIVE_LOCATION 실내 카메라 없음") else ProbeResult.Ok("${i.size}대")
                 },
-                Candidate("phone.companion", "폰 컴패니언 카메라(P5)", Tier.FALLBACK) { ProbeResult.Pending("T11 페어링 후 사용") },
+                Candidate(Ids.INTERIOR_PHONE, "폰 컴패니언 카메라(P5)", Tier.FALLBACK) {
+                    when (PhoneCameraSource.online(server.baseUrl, DeviceIdentity.carId(ctx))) {
+                        true -> ProbeResult.Ok("폰 카메라 모드 켜짐")
+                        false -> ProbeResult.Fail("폰에서 '실내 카메라로 쓰기'를 켜면 사용")
+                        null -> ProbeResult.Fail("서버 연결 안 됨")
+                    }
+                },
                 Candidate(Ids.INTERIOR_WEBCAM, "에뮬레이터 웹캠", Tier.PLATFORM) {
                     val w = cameras.cameras.filter { !it.roleSource.startsWith("AUTOMOTIVE") }
                     if (w.isEmpty()) ProbeResult.Fail("일반 카메라 없음")

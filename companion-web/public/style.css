@@ -31,3 +31,12 @@ dialog::backdrop { background: rgba(0, 0, 0, .7); }
 #viewer-img { width: 100%; border-radius: 12px; display: block; }
 #link-out { word-break: break-all; }
 #toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); background: var(--accent); color: #fff; padding: 14px 16px; border-radius: 16px; text-align: center; font-weight: 600; }
+.wide { width: 100%; margin-bottom: 8px; }
+.cam { position: relative; background: #000; border-radius: 16px; overflow: hidden; aspect-ratio: 16 / 9; }
+.cam video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cam video.mirror { transform: scaleX(-1); }
+#cam-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
+#cam-flash.on { opacity: .85; transition: none; }
+#cam-badge { position: absolute; left: 12px; top: 12px; }
+#cam-count { position: absolute; right: 12px; top: 12px; font-size: 14px; color: var(--text); background: rgba(0,0,0,.5); padding: 6px 10px; border-radius: 12px; }
+#cam-count:empty { display: none; }

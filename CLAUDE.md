@@ -34,7 +34,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell pm grant --user 10 ai.chaz android.permission.RECORD_AUDIO
 adb shell am start --user 10 -n ai.chaz/.MainActivity --es tab SETTINGS   # SPIKE 탭: --es spike run|tts|stt
 ```
-- 서버: `server/run.ps1` (또는 `server/.venv/Scripts/python -m uvicorn app.main:app --host 0.0.0.0 --port 8787`). 에뮬레이터에서 `http://10.0.2.2:8787`.
+- 서버: `server/run.ps1` (또는 `server/.venv/Scripts/python -m uvicorn app.main:app --host 0.0.0.0 --port 8787`). 에뮬레이터에서 `http://10.0.2.2:8787`. 같은 프로세스가 폰용 HTTPS 8788(자체 서명)도 연다 — 폰 카메라 모드(T11)는 HTTPS 필요.
 - Git Bash에서 adb shell 경로 인자는 `MSYS_NO_PATHCONV=1` 필요 (단, JAVA_HOME 설정과 같이 export하지 말 것).
 - 음성 명령 주입(한글은 base64): `adb shell am start --user 10 -f 0x20000000 -n ai.chaz/.MainActivity --es say64 $(printf '%s' '차즈 그만' | base64 -w0)`
 - 주행/정차 강제 전환(개발용 오버라이드): `--es drive on|off|auto` (위와 같은 am start)

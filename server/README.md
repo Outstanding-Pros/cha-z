@@ -14,6 +14,12 @@ copy .env.example .env      # BIZROUTER_API_KEY, IMAGE_PROVIDER 설정
 
 8000번 포트는 이 PC에서 다른 앱이 쓰고 있어서 8787 포트를 사용한다.
 
+같은 프로세스가 **폰용 HTTPS(8788, 자체 서명)** 도 함께 연다(T11). 폰 브라우저는 HTTPS 에서만 카메라를 열어 주기 때문이다.
+- 인증서는 처음 실행할 때 `data/tls/` 에 만들어지고(gitignore), LAN IP 가 바뀌면 다시 만든다.
+- 차량 화면 QR 은 `https://<LAN IP>:8788/app/?pair=…` 를 가리킨다. 폰에서 처음 한 번 "안전하지 않음 → 계속" 을 눌러 허용한다.
+- 폰과 PC 는 같은 네트워크여야 하고, Windows 방화벽에서 8787·8788 인바운드를 허용해야 한다.
+- `CHAZ_HTTPS_PORT=0` 이면 HTTPS 를 끈다(QR 은 http, 폰 카메라 모드는 쓸 수 없음).
+
 ## 설정 (.env)
 
 | 키 | 설명 |

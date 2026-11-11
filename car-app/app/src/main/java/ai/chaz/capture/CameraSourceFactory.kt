@@ -10,6 +10,8 @@ sealed interface SourcePlan {
     val role: CameraRole
     data class Camera(override val role: CameraRole, val cameraId: String, val kind: SourceKind) : SourcePlan
     data class Simulated(override val role: CameraRole, val assetPath: String) : SourcePlan
+    /** 폰 컴패니언 카메라 (P5, 서버 중계). */
+    data class Phone(override val role: CameraRole) : SourcePlan
 }
 
 /**
@@ -33,7 +35,8 @@ object CameraPlanner {
                 ?.let { plans += SourcePlan.Camera(CameraRole.INTERIOR, it.id, SourceKind.VEHICLE_CAMERA) }
             ProbeChains.Ids.INTERIOR_WEBCAM -> report.cameras.firstOrNull { !it.isAutomotive }
                 ?.let { plans += SourcePlan.Camera(CameraRole.INTERIOR, it.id, SourceKind.WEBCAM) }
-            // phone.companion(T11), bizrouter.virtual-interior(T16) 은 아직 없음
+            ProbeChains.Ids.INTERIOR_PHONE -> plans += SourcePlan.Phone(CameraRole.INTERIOR)
+            // bizrouter.virtual-interior(T16) 은 아직 없음
         }
 
         when (exteriorSelected) {
@@ -55,7 +58,12 @@ object CameraPlanner {
     private fun CameraReport.automotive(role: CameraRole) = cameras.filter { it.role == role && it.isAutomotive }
 }
 
-class CameraSourceFactory(private val context: Context, private val availability: SdkAvailability) {
+class CameraSourceFactory(
+    private val context: Context,
+    private val availability: SdkAvailability,
+    private val serverUrl: String,
+    private val carId: String,
+) {
 
     fun create(): List<CameraSource> {
         val plans = CameraPlanner.plan(
@@ -76,6 +84,7 @@ class CameraSourceFactory(private val context: Context, private val availability
                 is SourcePlan.Simulated -> SimulatedExteriorSource(
                     context.applicationContext, p.assetPath, p.role, label = "${roleLabel(p.role)}(시뮬레이션)",
                 )
+                is SourcePlan.Phone -> PhoneCameraSource(serverUrl, carId)
             }
         }
     }

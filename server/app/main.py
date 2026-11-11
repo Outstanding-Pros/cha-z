@@ -45,7 +45,77 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from . import sync  # noqa: E402
 
+from . import camera  # noqa: E402
+
 app.include_router(sync.router)
+app.include_router(camera.router)
+
+
+# 폰용 HTTPS 리스너 (T11). 차량(에뮬레이터)은 그대로 http://10.0.2.2:8787, 폰은 QR 의 https://<LAN IP>:8788.
+# 같은 프로세스에서 띄워야 SSE 구독·카메라 프레임(메모리)을 공유한다. CHAZ_HTTPS_PORT=0 이면 끈다.
+import asyncio  # noqa: E402
+import contextlib  # noqa: E402
+import socket  # noqa: E402
+
+import uvicorn  # noqa: E402
+
+_https: dict = {}
+
+
+class _SideServer(uvicorn.Server):
+    @contextlib.contextmanager
+    def capture_signals(self):  # 신호 처리는 본 서버에 맡긴다
+        yield
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
+
+
+@app.on_event("startup")
+async def _start_https() -> None:
+    port = int(os.getenv("CHAZ_HTTPS_PORT", "8788"))
+    if port <= 0 or _https:
+        return
+    if not _port_free(port):
+        log.warning("HTTPS 포트 %d 사용 중 — 폰 카메라 모드(P5)는 HTTPS 가 필요합니다", port)
+        return
+    from .tls import ensure_cert
+
+    cert, key = ensure_cert([sync.lan_ip()])
+    cfg = uvicorn.Config(app, host="0.0.0.0", port=port, ssl_certfile=str(cert), ssl_keyfile=str(key),
+                         lifespan="off", log_config=None)  # 본 서버 로그 설정을 덮어쓰지 않게 (access_log=False 도 전역이라 쓰지 않음)
+    server = _SideServer(cfg)
+
+    async def run() -> None:
+        try:
+            await server.serve()
+        except (SystemExit, Exception) as e:  # 바인드 실패 등이 본 서버를 죽이지 않게
+            log.warning("HTTPS 리스너 종료: %r", e)
+            sync.HTTPS_PORT = None
+
+    _https["server"] = server
+    _https["task"] = asyncio.create_task(run())
+    sync.HTTPS_PORT = port
+    log.info("폰용 HTTPS: %s/app/", sync.public_base())
+
+
+@app.on_event("shutdown")
+async def _stop_https() -> None:
+    server = _https.pop("server", None)
+    task = _https.pop("task", None)
+    if server:
+        server.should_exit = True
+    if task:
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(task, 5)
+
+
 _PWA = ROOT.parent / "companion-web" / "public"
 _PWA.mkdir(parents=True, exist_ok=True)
 app.mount("/app", StaticFiles(directory=_PWA, html=True), name="pwa")

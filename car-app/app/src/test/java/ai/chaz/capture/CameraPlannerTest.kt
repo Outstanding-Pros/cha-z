@@ -50,6 +50,12 @@ class CameraPlannerTest {
         )
     }
 
+    @Test fun `폰 카메라 모드가 선택되면 실내는 폰(웹캠보다 우선)`() {
+        val plans = CameraPlanner.plan(Ids.EXTERIOR_RECORDED, Ids.INTERIOR_PHONE, emulator, listOf("front_01.jpg", "rear_01.jpg"))
+        assertEquals(SourcePlan.Phone(CameraRole.INTERIOR), plans.first())
+        assertEquals(listOf(CameraRole.INTERIOR, CameraRole.FRONT, CameraRole.REAR), plans.map { it.role })
+    }
+
     @Test fun `선택된 후보가 없으면 소스도 없다`() {
         assertTrue(CameraPlanner.plan(null, null, emulator, listOf("front_01.jpg")).isEmpty())
     }

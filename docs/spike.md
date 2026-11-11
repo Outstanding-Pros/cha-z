@@ -109,6 +109,15 @@ CAAS(`ai.pleos.playground.caas`) 4.2.10-coral-aosp. 측정일 2026-11-09.
 - 오프라인(Wi-Fi·데이터 끔): 촬영 4/4·L1·L2·갤러리 저장 정상, 폰 연결은 '서버에 연결할 수 없어요'. **Pleos TTS onDone 이 안 오면 withTimeout 의 취소 예외가 촬영 세션까지 죽여 '준비'에서 멈추던 문제** → 시간 초과를 일반 예외로 바꿔 안내만 건너뛰고 촬영은 계속.
 - release 는 debuggable 이 아니라 `run-as` 로 결과 파일을 꺼낼 수 없음 → 갤러리(Pictures/Cha-z) 또는 디버그 빌드로.
 
+### T11 폰 실내 카메라 (11/11)
+- 흐름: 폰 PWA '실내 카메라로 쓰기' → getUserMedia 영상 → 0.5초마다 480px 프레임 업로드(`/sync/camera/frame` preview). 차량은 3초마다 `/sync/camera/status` 를 보고 켜지면 CAMERA_INTERIOR 를 다시 판정 → `phone.companion` 선택, 꺼지면 웹캠으로 복귀(촬영 중에는 바꾸지 않음).
+- 컷: 차량 `POST /sync/camera/shot` → SSE `capture.shot` → 폰이 영상에서 1920px 프레임을 떠서 업로드 → 같은 요청의 응답으로 JPEG. 로컬 측정 **8~40ms**(가짜 폰 스크립트, Edge 헤드리스 가짜 카메라). 실패하면 2초 안의 미리보기 프레임으로 대신.
+- 에뮬레이터 실측: 가짜 폰을 붙이자 미리보기가 폰 프레임으로 바뀌고, 12초 4컷이 모두 폰 고해상 컷(`PHONE SHOT` 라벨)으로 저장, L2 합성 정상.
+- **L1 차창 합성은 폰 카메라에서 '불가'**: 창문 마스크가 카메라 위치별 고정 파일(`masks/{cameraId}_windows.json`)이라 거치 위치가 매번 다른 폰에는 없음. 필요하면 T16(창문 자동 검출·아웃페인팅)에서.
+- 함정: 같은 프로세스에 두 번째 uvicorn 서버를 띄울 때 `log_level`·`access_log=False` 를 주면 **전역 로거를 바꿔 본 서버 접속 로그가 사라진다** → `log_config=None` 만 준다.
+- 함정: HTTPS 가 되면 서비스워커가 처음으로 등록된다. 기존 캐시 우선 sw 는 이후 app.js 수정이 폰에 안 보이므로 네트워크 우선으로 바꿈.
+- 미검증: 실제 폰(인증서 경고 허용, 전면 카메라, 화면 꺼짐 방지), 폰↔PC 방화벽.
+
 ### 백그라운드 (B1·B2)
 - **미검증.** T07 음성 체인 이후 Foreground Service로 확인 예정. 그 전까지 사양의 'window에 있을 때만(T4 중심)' 동작으로 둔다.
 
