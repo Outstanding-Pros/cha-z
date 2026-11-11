@@ -25,7 +25,11 @@ copy .env.example .env      # BIZROUTER_API_KEY, IMAGE_PROVIDER 설정
 - 폰 경로(`/app`, `/s/`, 페어링 수락, 사진 받기·공유, 카메라 프레임, `/health`)는 토큰 없이 허용.
 - 나머지(차량 전용·AI)는 `X-Chaz-Token` 이 `.env` 의 `CHAZ_APP_TOKEN` 과 같아야 한다. 차량 앱은 `local.properties` 의 같은 값을 쓴다.
 - AI 경로(이미지·TTS·STT·인텐트)는 IP 당 분당 `CHAZ_AI_PER_MIN`(20), 하루 전체 `CHAZ_DAILY_AI_LIMIT`(500) 회 상한.
-- `.env` 에 `PUBLIC_BASE_URL=https://<서버 도메인>` 를 넣으면 페어링 QR·공유 링크가 도메인 주소가 된다.
+- `.env` 에 `PUBLIC_BASE_URL=https://<서버 도메인>` 를 넣으면 페어링 QR·공유 링크가 도메인 주소가 되고, 자체 서명 HTTPS(8788)는 자동으로 꺼진다.
+- AI 중 이미지 생성은 하루 `CHAZ_DAILY_IMAGE_LIMIT`(30) 회로 따로 제한. 외부 `/health` 는 `{"ok": true}` 만.
+- 서버는 `127.0.0.1` 에만 바인드(run.ps1) → 공인 IP 로 8787 에 직접 들어올 수 없고 Cloudflare 경유만 가능.
+- 터널: `cloudflared tunnel --config ~/.cloudflared/chaz.yml run chaz` (터널 `chaz` → `localhost:8787`). 인증 파일은 `~/.cloudflared/` 에만.
+- 실측(11/11): Cloudflare 경유 시 폰 촬영 신호 지연 0.3초(가끔 1~1.8초), 업로드 포함 0.5~3초 → 셔터보다 늦게 찍힐 수 있음.
 
 ## 설정 (.env)
 

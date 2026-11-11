@@ -82,6 +82,8 @@ def _port_free(port: int) -> bool:
 @app.on_event("startup")
 async def _start_https() -> None:
     port = int(os.getenv("CHAZ_HTTPS_PORT", "8788"))
+    if os.getenv("PUBLIC_BASE_URL", "").startswith("https://"):
+        port = 0  # 도메인(Cloudflare)이 HTTPS 를 맡으므로 자체 서명 리스너는 필요 없다
     if port <= 0 or _https:
         return
     if not _port_free(port):
@@ -153,7 +155,11 @@ def _key_configured() -> bool:
 
 
 @app.get("/health")
-def health():
+def health(request: Request):
+    from .guard import is_external
+
+    if is_external(request):  # 외부에는 살아 있는지만 (모델·키 설정 여부는 숨김)
+        return {"ok": True}
     return {
         "ok": True,
         "provider": os.getenv("IMAGE_PROVIDER", "mock"),

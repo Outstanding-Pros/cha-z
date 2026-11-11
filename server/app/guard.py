@@ -32,9 +32,10 @@ AI_PATHS = ("/frames/generate", "/voice/tts", "/voice/stt", "/intent/parse")
 PER_MIN_GENERAL = int(os.getenv("CHAZ_RATE_PER_MIN", "600"))   # 폰 미리보기 0.5초 간격 = 분당 120
 PER_MIN_AI = int(os.getenv("CHAZ_AI_PER_MIN", "20"))
 DAILY_AI = int(os.getenv("CHAZ_DAILY_AI_LIMIT", "500"))
+DAILY_IMAGE = int(os.getenv("CHAZ_DAILY_IMAGE_LIMIT", "30"))  # 이미지 생성은 가장 비싸서 따로 낮게
 
 _hits: dict[tuple[str, str], deque] = defaultdict(deque)
-_daily = {"day": date.today(), "n": 0}
+_daily = {"day": date.today(), "n": 0, "img": 0}
 
 
 def client_ip(request: Request) -> str:
@@ -85,9 +86,13 @@ async def guard(request: Request, call_next):
             return JSONResponse({"detail": "AI 요청이 너무 많아요"}, status_code=429)
         today = date.today()
         if _daily["day"] != today:
-            _daily.update(day=today, n=0)
+            _daily.update(day=today, n=0, img=0)
         if _daily["n"] >= DAILY_AI:
             return JSONResponse({"detail": "오늘 AI 사용량을 다 썼어요"}, status_code=429)
+        if path.startswith("/frames/generate"):
+            if _daily["img"] >= DAILY_IMAGE:
+                return JSONResponse({"detail": "오늘 이미지 생성량을 다 썼어요"}, status_code=429)
+            _daily["img"] += 1
         _daily["n"] += 1
 
     return await call_next(request)
