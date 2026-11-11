@@ -55,3 +55,9 @@ copy .env.example .env      # BIZROUTER_API_KEY, IMAGE_PROVIDER 설정
 | GET | `/frames/{id}/preview.jpg` | 칸을 체크무늬로 채운 확인용 이미지 |
 
 같은 요청(provider + model + prompt + 장소)은 `data/frames/`에 캐시되어 곧바로 반환된다. `"force": true`를 주면 다시 생성한다.
+
+## 자동 실행 (<서버 도메인>)
+`start-public.ps1` 이 서버(127.0.0.1:8787)와 Cloudflare 터널 `chaz` 를 띄우고, 하나가 죽으면 15초 안에 다시 띄운다.
+Windows 작업 스케줄러 `ChazBoot`(로그인 시, 숨김 창)가 이 스크립트를 실행한다. 로그: `server/data/logs/`.
+- 지금 바로 켜기: `Start-ScheduledTask ChazBoot` · 끄기: `Stop-ScheduledTask ChazBoot` 후 python/cloudflared(chaz.yml) 종료
+- 코드를 바꾼 뒤 서버만 다시 띄우려면 8787 의 python 만 종료 → 감시 스크립트가 새 코드로 다시 띄움
