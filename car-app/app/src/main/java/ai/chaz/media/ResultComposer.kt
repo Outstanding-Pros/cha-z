@@ -39,6 +39,8 @@ class ResultComposer(
     private val renderers: Map<Layout, LayoutRenderer>,
     private val vehicle: () -> VehicleStateProvider,
     private val windowMask: () -> WindowMask?,
+    /** L3 경로 카드 재료 (데모 경로 + 현재 위치 + 다음 스팟). */
+    private val route: () -> RouteInfo? = { null },
 ) {
     private val cache = LinkedHashMap<String, CutImages>()
 
@@ -75,6 +77,7 @@ class ResultComposer(
         stamp = StampInfo(dateText = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date())),
         windowMask = windowMask(),
         sourceKinds = kinds,
+        route = route(),
     )
 
     suspend fun options(result: CaptureSessionEngine.Result, frameColor: FrameColor, showStamp: Boolean, filter: ColorPreset = ColorPreset.ORIGINAL): RenderOptions {
@@ -93,6 +96,7 @@ class ResultComposer(
             filter = filter,
             windowMask = windowMask(),
             sourceKinds = kinds,
+            route = route(),
         )
     }
 

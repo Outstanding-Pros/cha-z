@@ -43,6 +43,8 @@ data class RenderOptions(
     val windowMask: WindowMask? = null,
     /** 결과물에 쓴 소스 종류 → 시뮬레이션·AI 표기 (SPEC 구현 규칙 5). */
     val sourceKinds: Set<SourceKind> = emptySet(),
+    /** L3: 여행 경로 (없으면 경로 카드에 글자만). */
+    val route: RouteInfo? = null,
 ) {
     val simulationNote: String?
         get() = when {

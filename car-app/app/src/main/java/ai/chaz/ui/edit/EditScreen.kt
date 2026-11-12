@@ -80,7 +80,7 @@ fun EditScreen(graph: AppGraph) {
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     fun selectedCuts(): List<Cut> =
-        if (layout == Layout.WINDOW_SWAP) cuts.filter { it.index == single }
+        if (layout != Layout.CUT_FRAME) cuts.filter { it.index == single }
         else cuts.filter { it.index in multi }.sortedBy { it.index }
     val scope = rememberCoroutineScope()
     val phone by graph.phone.state.collectAsState()
@@ -91,7 +91,7 @@ fun EditScreen(graph: AppGraph) {
     val aiCache = remember(r) { androidx.compose.runtime.mutableStateMapOf<Int, Bitmap>() }
     var showAi by remember(r) { mutableStateOf(false) }
     var aiBusy by remember(r) { mutableStateOf(false) }
-    fun aiCutIndex(): Int? = if (layout == Layout.WINDOW_SWAP) single else multi.minOrNull()
+    fun aiCutIndex(): Int? = if (layout != Layout.CUT_FRAME) single else multi.minOrNull()
     val aiShown: Bitmap? = if (showAi) aiCutIndex()?.let { aiCache[it] } else null
 
     suspend fun runAi() {
@@ -178,13 +178,14 @@ fun EditScreen(graph: AppGraph) {
             Card(Modifier.width(420.dp).fillMaxHeight(), title = "셀렉·편집") {
                 ai.chaz.ui.SectionLabel("레이아웃")
                 FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME).forEach { l ->
+                    listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME, Layout.ROUTE_OVERLAY).forEach { l ->
                         val ok = composer.available(l, cuts)
                         Chip("${l.id} ${l.label}" + if (ok) "" else " (폰 촬영 불가)".takeIf { l == Layout.WINDOW_SWAP && composer.available(l) } ?: " (불가)", selected = layout == l) { if (ok) layout = l }
                     }
                 }
                 Text(
                     if (layout == Layout.WINDOW_SWAP) "지붕을 열어요 — 좌석과 사람만 남기고 위쪽을 같은 순간의 바깥 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
+                    else if (layout == Layout.ROUTE_OVERLAY) "전방 풍경 위에 오늘 달린 길과 다음 목적지를 얹어요. 인물은 동그란 사진으로. 아래에서 컷 1장을 고르세요."
                     else "풍경을 배경으로 인물을 오려 2~4칸에 담아요. 아래에서 컷을 2~4장 고르세요.",
                     color = Tokens.text2, fontSize = 14.sp, lineHeight = 20.sp,
                 )
@@ -258,9 +259,9 @@ fun EditScreen(graph: AppGraph) {
         // 컷 필름스트립
         LazyRow(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(cuts, key = { it.index }) { cut ->
-                val selected = if (layout == Layout.WINDOW_SWAP) cut.index == single else cut.index in multi
+                val selected = if (layout != Layout.CUT_FRAME) cut.index == single else cut.index in multi
                 CutThumb(cut, selected) {
-                    if (layout == Layout.WINDOW_SWAP) single = cut.index
+                    if (layout != Layout.CUT_FRAME) single = cut.index
                     else multi = when {
                         cut.index in multi && multi.size > 1 -> multi - cut.index
                         cut.index !in multi && multi.size < 4 -> multi + cut.index

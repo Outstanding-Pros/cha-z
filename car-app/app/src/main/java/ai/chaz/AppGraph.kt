@@ -176,9 +176,13 @@ class AppGraph(context: Context) {
         }
         ResultComposer(
             appContext,
-            renderers = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(seg), Layout.CUT_FRAME to CutFrameRenderer(seg)),
+            renderers = mapOf(
+                Layout.WINDOW_SWAP to WindowSwapRenderer(seg), Layout.CUT_FRAME to CutFrameRenderer(seg),
+                Layout.ROUTE_OVERLAY to ai.chaz.media.RouteOverlayRenderer(seg),
+            ),
             vehicle = { vehicleState },
             windowMask = { currentWindowMask() },
+            route = { currentRoute() },
         )
     }
 
@@ -271,8 +275,14 @@ class AppGraph(context: Context) {
     }
 
     val live by lazy {
-        val withSeg = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(liveSegmenter), Layout.CUT_FRAME to CutFrameRenderer(liveSegmenter))
-        val noSeg = mapOf(Layout.WINDOW_SWAP to WindowSwapRenderer(noSegmenter), Layout.CUT_FRAME to CutFrameRenderer(noSegmenter))
+        val withSeg = mapOf(
+            Layout.WINDOW_SWAP to WindowSwapRenderer(liveSegmenter), Layout.CUT_FRAME to CutFrameRenderer(liveSegmenter),
+            Layout.ROUTE_OVERLAY to ai.chaz.media.RouteOverlayRenderer(liveSegmenter),
+        )
+        val noSeg = mapOf(
+            Layout.WINDOW_SWAP to WindowSwapRenderer(noSegmenter), Layout.CUT_FRAME to CutFrameRenderer(noSegmenter),
+            Layout.ROUTE_OVERLAY to ai.chaz.media.RouteOverlayRenderer(noSegmenter),
+        )
         LivePreviewEngine(
             sources = { _cameras.value },
             renderers = { seg -> if (seg) withSeg else noSeg },
@@ -282,6 +292,21 @@ class AppGraph(context: Context) {
     /** 라이브용은 결과물용과 따로 둔다 (동시에 돌 때 서로 기다리지 않게). */
     private val liveSegmenter: PersonSegmenter by lazy {
         if (availability.selectedId(Feature.PERSON_SEGMENTER) == ProbeChains.Ids.SEGMENTER_MEDIAPIPE) MediaPipePersonSegmenter(appContext) else noSegmenter
+    }
+
+    /**
+     * L3 경로 카드: 데모 경로 + 지금 위치 + 다음 스팟(목적지 대신). 도착 시각은 남은 직선거리를 평균 40km/h 로 나눈 추정.
+     * TODO(T15): Navi 목적지·경로(onDestinationInfo/onTripInfo)가 열리면 그 값으로 바꾼다.
+     */
+    private fun currentRoute(): ai.chaz.media.RouteInfo? {
+        val pts = demoRoute.map { it.lat to it.lon }
+        if (pts.size < 2) return null
+        val here = location.location.value
+        val next = runCatching { spotGuide.nearest.value }.getOrNull()
+        val eta = next?.let {
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA).format(java.util.Date(System.currentTimeMillis() + (it.distanceM / (40_000.0 / 3_600_000)).toLong()))
+        }
+        return ai.chaz.media.RouteInfo(pts, here?.let { it.lat to it.lon }, next?.spot?.name, next?.distanceM, eta, next?.spot?.point?.let { it.lat to it.lon })
     }
 
     /** 실내 카메라 위치가 고정이면 정적 창문 마스크 (assets/masks/{cameraId}_windows.json). */
