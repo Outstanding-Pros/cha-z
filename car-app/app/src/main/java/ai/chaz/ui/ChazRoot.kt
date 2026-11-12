@@ -34,8 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Tab(val label: String, val ready: Boolean) {
-    HOME("촬영", true), GALLERY("갤러리", false), LIGHT("조명", true), SETTINGS("설정", true), SPIKE("점검", true)
+enum class Tab(val label: String, val ready: Boolean, val icon: () -> androidx.compose.ui.graphics.vector.ImageVector) {
+    HOME("촬영", true, { ChazIcons.camera }), GALLERY("갤러리", false, { ChazIcons.gallery }), LIGHT("조명", true, { ChazIcons.light }),
+    SETTINGS("설정", true, { ChazIcons.settings }), SPIKE("점검", true, { ChazIcons.tools }),
 }
 
 @Composable
@@ -62,7 +63,7 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
             action = if (state is AppState.Capturing) "중지" to { graph.capture.stop() } else null,
         ) {
             Row(Modifier.fillMaxSize()) {
-                LeftRail(tab) { tab = it }
+                LeftRail(tab, graph) { tab = it }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when (tab) {
                         Tab.HOME -> if (state is AppState.Editing) EditScreen(graph) else StandbyScreen(graph)
@@ -78,20 +79,6 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
         }
         // 앰비언트 조명 테두리 (시뮬레이션 또는 실제 조명 미러)
         ai.chaz.ui.light.AmbientBorder(graph)
-        // 마이크 사용 중 표시 (SPEC: 마이크를 쓰는 동안 항상 표시)
-        val listening by graph.voice.listening.collectAsState()
-        if (listening) {
-            Row(
-                Modifier.align(Alignment.TopEnd).padding(12.dp)
-                    .background(Tokens.surface2, Tokens.controlShape)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(Modifier.size(10.dp).background(Tokens.rec, androidx.compose.foundation.shape.CircleShape))
-                Text("마이크 · '차즈' 듣는 중", color = Tokens.text, fontSize = 14.sp)
-            }
-        }
         // 개발용 오버라이드로 주행을 고정했을 때 설정에 못 들어가는 일을 막는다 (시연 화면에는 안 보임)
         if (driving.override == DrivingGateHub.Override.FORCE_DRIVING) {
             Box(Modifier.align(Alignment.BottomCenter).padding(24.dp)) {
@@ -102,32 +89,44 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
 }
 
 @Composable
-private fun LeftRail(selected: Tab, onSelect: (Tab) -> Unit) {
+private fun LeftRail(selected: Tab, graph: AppGraph, onSelect: (Tab) -> Unit) {
+    val phone by graph.phone.state.collectAsState()
     Column(
-        Modifier.width(112.dp).fillMaxHeight().background(Tokens.surface).padding(vertical = 24.dp),
+        Modifier.width(120.dp).fillMaxHeight().background(Tokens.surface).padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("차~즈", color = Tokens.accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Box(Modifier.padding(top = 16.dp))
+        Text("차~즈", color = Tokens.accent, fontSize = 24.sp, fontWeight = FontWeight.Black)
+        Box(Modifier.padding(top = 20.dp))
         Tab.entries.forEach { t ->
             val isSel = t == selected
-            Box(
+            val fg = when { isSel -> Tokens.accent; t.ready -> Tokens.text; else -> Tokens.text3 }
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
-                    .background(if (isSel) Tokens.surface2 else Tokens.surface, Tokens.controlShape)
+                    .background(if (isSel) Tokens.accentSoft else Tokens.surface, Tokens.controlShape)
                     .clickable(enabled = t.ready) { onSelect(t) }
-                    .padding(vertical = 18.dp),
-                contentAlignment = Alignment.Center,
+                    .padding(vertical = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(
-                    t.label,
-                    color = when { isSel -> Tokens.accent; t.ready -> Tokens.text; else -> Tokens.line },
-                    fontSize = 16.sp,
-                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                )
+                androidx.compose.material3.Icon(t.icon(), null, tint = fg, modifier = Modifier.size(30.dp))
+                Text(t.label, color = fg, fontSize = 15.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium)
             }
         }
+        Box(Modifier.weight(1f))
+        // 마이크 사용 중 표시 (SPEC: 마이크를 쓰는 동안 항상 표시)
+        val listening by graph.voice.listening.collectAsState()
+        if (listening) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+                Box(Modifier.size(10.dp).background(Tokens.rec, androidx.compose.foundation.shape.CircleShape))
+                androidx.compose.material3.Icon(ChazIcons.mic, "마이크 사용 중", tint = Tokens.text, modifier = Modifier.size(24.dp))
+            }
+        }
+        // SPEC: 레일 아래에 페어링된 폰 상태
+        val c = if (phone.paired) Tokens.ok else Tokens.text3
+        androidx.compose.material3.Icon(ChazIcons.phone, null, tint = c, modifier = Modifier.size(28.dp))
+        Text(if (phone.paired) "폰 연결" else "폰 없음", color = c, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }

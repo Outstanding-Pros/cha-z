@@ -175,8 +175,8 @@ fun EditScreen(graph: AppGraph) {
                 }
             }
             // 오른쪽 패널
-            Card(Modifier.width(380.dp).fillMaxHeight(), title = "셀렉·편집") {
-                Text("레이아웃", color = Tokens.text2, fontSize = 13.sp)
+            Card(Modifier.width(420.dp).fillMaxHeight(), title = "셀렉·편집") {
+                ai.chaz.ui.SectionLabel("레이아웃")
                 FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME).forEach { l ->
                         val ok = composer.available(l, cuts)
@@ -186,28 +186,34 @@ fun EditScreen(graph: AppGraph) {
                 Text(
                     if (layout == Layout.WINDOW_SWAP) "지붕을 열어요 — 좌석과 사람만 남기고 위쪽을 같은 순간의 바깥 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
                     else "풍경을 배경으로 인물을 오려 2~4칸에 담아요. 아래에서 컷을 2~4장 고르세요.",
-                    color = Tokens.text2, fontSize = 13.sp,
+                    color = Tokens.text2, fontSize = 14.sp, lineHeight = 20.sp,
                 )
-                Box(Modifier.height(16.dp))
-                Text("프레임", color = Tokens.text2, fontSize = 13.sp)
+                Box(Modifier.height(20.dp))
+                ai.chaz.ui.SectionLabel("프레임")
                 Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FrameColor.entries.forEach { c -> Chip(c.label, selected = color == c) { color = c } }
                 }
-                Text("필터", color = Tokens.text2, fontSize = 13.sp)
+                Box(Modifier.height(8.dp))
+                ai.chaz.ui.SectionLabel("필터")
                 FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ai.chaz.media.ColorPreset.entries.forEach { f -> Chip(f.label, selected = filter == f) { filter = f } }
                 }
-                Chip(if (stamp) "스탬프 켜짐" else "스탬프 꺼짐", selected = stamp) { stamp = !stamp }
-                Box(Modifier.height(12.dp))
+                Box(Modifier.height(8.dp))
+                ai.chaz.ui.SectionLabel("스탬프 (장소·날짜·주행 정보)")
+                Chip(if (stamp) "켜짐" else "꺼짐", selected = stamp) { stamp = !stamp }
+                Box(Modifier.height(20.dp))
+                ai.chaz.ui.SectionLabel("AI 편집")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Chip(
                         when {
-                            aiBusy -> "✨ AI 오픈카 만드는 중…"
+                            aiBusy -> "AI 오픈카 만드는 중…"
                             showAi -> "앱 합성으로 보기"
-                            aiCutIndex()?.let { it in aiCache } == true -> "✨ AI 오픈카 보기"
-                            else -> "✨ AI 오픈카"
+                            aiCutIndex()?.let { it in aiCache } == true -> "AI 오픈카 보기"
+                            else -> "AI 오픈카"
                         },
                         selected = showAi,
+                        color = Tokens.ai,
+                        icon = ai.chaz.ui.ChazIcons.sparkle,
                     ) {
                         if (aiBusy || busy) return@Chip
                         if (showAi) showAi = false else scope.launch { runAi() }
@@ -215,13 +221,12 @@ fun EditScreen(graph: AppGraph) {
                 }
                 Text(
                     "고른 컷 1장을 AI가 진짜 오픈카 사진처럼 다시 그려요 (약 15초, 'AI 편집' 표기). 사진이 서버를 거쳐 AI 서비스로 전송돼요.",
-                    color = Tokens.text2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+                    color = Tokens.text2, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 8.dp),
                 )
                 Box(Modifier.weight(1f))
-                message?.let { Text(it, color = Tokens.warn, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip("저장", selected = true) {
-                        if (busy || aiBusy) return@Chip
+                message?.let { Text(it, color = Tokens.warn, fontSize = 15.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+                ai.chaz.ui.PrimaryButton("저장", Modifier.fillMaxWidth(), icon = ai.chaz.ui.ChazIcons.save) {
+                        if (busy || aiBusy) return@PrimaryButton
                         scope.launch {
                             busy = true
                             try {
@@ -236,15 +241,14 @@ fun EditScreen(graph: AppGraph) {
                             }
                         }
                     }
-                    Chip("폰으로 보내기", selected = false) {
-                        if (busy || aiBusy) return@Chip
-                        if (phone.paired) scope.launch { saveAndSend() }
-                        else { pairing = true; sendAfterPair = true; graph.phone.startPairing() }
-                    }
+                Chip("폰으로 보내기", selected = false, icon = ai.chaz.ui.ChazIcons.send, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    if (busy || aiBusy) return@Chip
+                    if (phone.paired) scope.launch { saveAndSend() }
+                    else { pairing = true; sendAfterPair = true; graph.phone.startPairing() }
                 }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip("다시 찍기", selected = false) { graph.capture.start(TriggerSource.SHUTTER_BUTTON, graph.capture.lastConfig) }
-                    Chip("닫기", selected = false) { graph.capture.stop() }
+                    Chip("다시 찍기", selected = false, modifier = Modifier.weight(1f)) { graph.capture.start(TriggerSource.SHUTTER_BUTTON, graph.capture.lastConfig) }
+                    Chip("닫기", selected = false, modifier = Modifier.weight(1f)) { graph.capture.stop() }
                 }
             }
         }

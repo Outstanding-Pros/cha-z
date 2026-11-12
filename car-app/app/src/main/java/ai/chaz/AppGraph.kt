@@ -185,7 +185,9 @@ class AppGraph(context: Context) {
     val previewPrefs = MutableStateFlow(PreviewPrefs())
 
     // ---- T12 위치·스팟 가이드 / T13 앰비언트 ----
-    val location = LocationHub(scope, DemoRouteSource(DemoSpotSource.route(appContext), scope))
+    /** 데모 경로 (미니맵에 그린다). */
+    val demoRoute: List<ai.chaz.platform.navi.GeoPoint> by lazy { DemoSpotSource.route(appContext) }
+    val location = LocationHub(scope, DemoRouteSource(demoRoute, scope))
     private val naviLocation by lazy {
         NaviHelperLocationSource(appContext, scope).also { src ->
             src.onRoutingCompleted = { scope.launch { location.location.value?.let { spotRepo.spotsNear(it, force = true) } } }
