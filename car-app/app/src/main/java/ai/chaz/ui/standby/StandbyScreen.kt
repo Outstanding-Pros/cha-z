@@ -86,6 +86,16 @@ fun StandbyScreen(graph: AppGraph) {
                     color = Tokens.text2, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp),
                 )
                 Box(Modifier.padding(top = 16.dp))
+                val mode by graph.shootMode.collectAsState()
+                Text("촬영 모드", color = Tokens.text2, fontSize = 13.sp)
+                Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ai.chaz.capture.ShootMode.entries.forEach { m ->
+                        ai.chaz.ui.Chip(m.label, selected = mode == m) { graph.setShootMode(m) }
+                    }
+                }
+                if (mode == ai.chaz.capture.ShootMode.LIVE && sources.none { it.role == CameraRole.INTERIOR }) {
+                    Text("폰에서 '실내 카메라로 쓰기'를 켜 주세요 (설정 탭 QR로 연결)", color = Tokens.warn, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
+                }
                 listOf(CameraRole.INTERIOR, CameraRole.FRONT, CameraRole.REAR).forEach { role ->
                     val s = sources.firstOrNull { it.role == role }
                     Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

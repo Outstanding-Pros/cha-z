@@ -105,9 +105,9 @@ class ResultComposer(
     }
 
     /** 앱 폴더(sessions/{id}/results)와 갤러리(Pictures/Cha-z)에 저장. */
-    suspend fun save(sessionId: String, layout: Layout, bitmap: Bitmap, opts: RenderOptions): Result = withContext(Dispatchers.IO) {
+    suspend fun save(sessionId: String, layout: Layout, bitmap: Bitmap, opts: RenderOptions, tags: List<String> = emptyList()): Result = withContext(Dispatchers.IO) {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val id = "$sessionId-${layout.id}-$stamp"
+        val id = "$sessionId-${layout.id}${if ("AI_OPENTOP" in tags) "-ai" else ""}-$stamp"
         val dir = File(context.filesDir, "sessions/$sessionId/results").apply { mkdirs() }
         val file = File(dir, "$id.jpg")
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
@@ -122,12 +122,12 @@ class ResultComposer(
             uri?.let { u -> context.contentResolver.openOutputStream(u)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) } }
         }
 
-        val result = Result(id, listOf(sessionId), layout, file.absolutePath, listOfNotNull(opts.filter.takeIf { it != ColorPreset.ORIGINAL }?.name), opts.sourceKinds)
+        val result = Result(id, listOf(sessionId), layout, file.absolutePath, listOfNotNull(opts.filter.takeIf { it != ColorPreset.ORIGINAL }?.name) + tags, opts.sourceKinds)
         _lastSaved.value = result
         File(dir, "$id.json").writeText(
             JSONObject()
                 .put("id", id).put("sessionIds", JSONArray(result.sessionIds)).put("layout", layout.name)
-                .put("kind", "PHOTO").put("path", file.name).put("filters", JSONArray())
+                .put("kind", "PHOTO").put("path", file.name).put("filters", JSONArray(result.filters))
                 .put("sourceKinds", JSONArray(result.sourceKinds.map { it.name })).put("createdOn", result.createdOn)
                 .toString(2),
         )

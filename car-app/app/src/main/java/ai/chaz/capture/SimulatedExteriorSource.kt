@@ -51,6 +51,8 @@ class SimulatedExteriorSource(
 
     private inner class PanView(context: Context) : View(context) {
         private val dst = Rect()
+        // 에뮬레이터 GPU 에서 이 뷰를 크게(메인 뷰파인더) 그리면 앱 창 전체가 검게 나오는 문제 → 소프트웨어 레이어로
+        init { setLayerType(LAYER_TYPE_SOFTWARE, null) }
         override fun onDraw(canvas: Canvas) {
             val src = KenBurns.window(image.width, image.height, clock()).toRect()
             // 화면 비율에 맞게 가운데 기준으로 채운다 (FILL_CENTER)

@@ -310,6 +310,21 @@ class AppGraph(context: Context) {
 
     private var phoneCamWatch: Job? = null
 
+    /** 촬영 모드(시연/실촬영). 바꾸면 실내 소스만 다시 판정한다. 촬영 중에는 바꾸지 않는다. */
+    val shootMode: StateFlow<ai.chaz.capture.ShootMode?> = ai.chaz.capture.ShootModeStore.flow(appContext)
+
+    fun setShootMode(mode: ai.chaz.capture.ShootMode) {
+        if (capture.model.value.state is AppState.Capturing) return
+        ai.chaz.capture.ShootModeStore.set(appContext, mode)
+        scope.launch {
+            withContext(Dispatchers.Default) { probe.probe(Feature.CAMERA_INTERIOR) }
+            rebuildCameras()
+        }
+    }
+
+    /** ✨ AI 오픈카 (서버 /frames/opentop). */
+    val aiOpenTop = ai.chaz.sync.AiOpenTopClient(BuildConfig.CHAZ_SERVER_URL)
+
     /** T11: 폰 '실내 카메라 모드'가 켜지거나 꺼지면 실내 소스를 다시 판정한다. 촬영 중에는 바꾸지 않는다. */
     private fun watchPhoneCamera() {
         if (phoneCamWatch?.isActive == true) return
@@ -319,7 +334,8 @@ class AppGraph(context: Context) {
                 if (!foreground || _probing.value || capture.model.value.state is AppState.Capturing) continue
                 val online = ai.chaz.capture.PhoneCameraSource.online(BuildConfig.CHAZ_SERVER_URL, phone.carId) ?: continue
                 val usingPhone = availability.selectedId(Feature.CAMERA_INTERIOR) == ProbeChains.Ids.INTERIOR_PHONE
-                if (online != usingPhone) {
+                val wantPhone = online && ai.chaz.capture.ShootModeStore.get(appContext) == ai.chaz.capture.ShootMode.LIVE
+                if (wantPhone != usingPhone) {
                     withContext(Dispatchers.Default) { probe.probe(Feature.CAMERA_INTERIOR) }
                     if (capture.model.value.state !is AppState.Capturing) rebuildCameras()
                 }

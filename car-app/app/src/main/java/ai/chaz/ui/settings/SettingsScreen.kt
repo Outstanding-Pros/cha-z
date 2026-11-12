@@ -46,6 +46,19 @@ fun SettingsScreen(graph: AppGraph) {
     ) {
         item { ai.chaz.ui.PairingCard(graph.phone, Modifier.fillMaxWidth()) }
         item {
+            val mode by graph.shootMode.collectAsState()
+            Card(title = "촬영 모드") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ai.chaz.capture.ShootMode.entries.forEach { m -> Chip(m.label, selected = mode == m) { graph.setShootMode(m) } }
+                }
+                Text(
+                    ai.chaz.capture.ShootMode.entries.joinToString("\n") { "${it.label}: ${it.hint}" } +
+                        "\n전·후방 풍경은 두 모드 모두 시뮬레이션(실차 카메라 없음).",
+                    color = Tokens.text2, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+        item {
             Card(title = "주행 규제 (DrivingGate)") {
                 Text(
                     (if (driving.restricted) "주행 중" else "정차 중") + "  ·  ${driving.source}  ·  ${driving.detail}",

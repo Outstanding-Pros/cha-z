@@ -90,7 +90,25 @@ internal object Draw {
         canvas.drawText(text, right - p.measureText(text), baseline, p)
     }
 
-    fun filterPaint() = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    /**
+     * ✨ AI 오픈카 결과 마감: 주황 날짜 각인 + 왼쪽 아래 'AI 편집 · CHA~Z' 표기(생성형 AI 결과물 표시 — 지우지 않는다).
+     * 원본은 건드리지 않고 새 비트맵을 돌려준다.
+     */
+    fun aiFinish(src: Bitmap, dateText: String?): Bitmap {
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        val c = Canvas(out)
+        val u = out.height / 768f
+        dateText?.let { dateStamp(c, filmDate(it), out.width - 28f * u, out.height - 28f * u, 30f * u) }
+        val label = "AI 편집 · CHA~Z"
+        val p = text(Color.WHITE, 20f * u, bold = true)
+        val w = p.measureText(label)
+        val r = RectF(20f * u, out.height - 58f * u, 20f * u + w + 28f * u, out.height - 22f * u)
+        c.drawRoundRect(r, 18f * u, 18f * u, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x80000000.toInt() })
+        c.drawText(label, r.left + 14f * u, r.centerY() + p.textSize * 0.36f, p)
+        return out
+    }
+
+    fun filterPaint() =Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
     /** 원본(w×h)에서 aspect(가로/세로)에 맞는 잘라낼 영역. vBias 0 = 위, 0.5 = 가운데. */
     fun crop(w: Int, h: Int, aspect: Float, vBias: Float = 0.5f): Rect {

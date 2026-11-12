@@ -87,13 +87,48 @@ fun EditScreen(graph: AppGraph) {
     var pairing by remember { mutableStateOf(false) }
     var sendAfterPair by remember { mutableStateOf(false) }
 
+    // ✨ AI 오픈카: 컷마다 한 번만 서버에 보낸다 (다시 누르면 받아 둔 결과를 보여 줌 — 비용 절약)
+    val aiCache = remember(r) { androidx.compose.runtime.mutableStateMapOf<Int, Bitmap>() }
+    var showAi by remember(r) { mutableStateOf(false) }
+    var aiBusy by remember(r) { mutableStateOf(false) }
+    fun aiCutIndex(): Int? = if (layout == Layout.WINDOW_SWAP) single else multi.minOrNull()
+    val aiShown: Bitmap? = if (showAi) aiCutIndex()?.let { aiCache[it] } else null
+
+    suspend fun runAi() {
+        val cut = cuts.firstOrNull { it.index == aiCutIndex() } ?: return
+        aiCache[cut.index]?.let { showAi = true; return }
+        aiBusy = true
+        message = null
+        try {
+            val (interior, rear) = withContext(Dispatchers.IO) {
+                fun read(role: CameraRole) = cut.frames.firstOrNull { it.role == role }?.path?.let { BitmapFactory.decodeFile(it) }
+                read(CameraRole.INTERIOR) to (read(CameraRole.REAR) ?: read(CameraRole.FRONT))
+            }
+            if (interior == null) { message = "이 컷에는 실내 사진이 없어요"; return }
+            val out = graph.aiOpenTop.open(interior, rear)
+            val date = composer.options(r, color, stamp, filter).stamp.dateText.takeIf { stamp }
+            aiCache[cut.index] = withContext(Dispatchers.Default) { ai.chaz.media.Draw.aiFinish(out, date) }
+            showAi = true
+        } catch (e: ai.chaz.sync.AiOpenTopClient.Failed) {
+            message = "${e.message} — 앱 합성 결과를 쓸 수 있어요"
+        } catch (e: Exception) {
+            message = "AI 편집 실패 — 앱 합성 결과를 쓸 수 있어요"
+        } finally {
+            aiBusy = false
+        }
+    }
+
+    /** 저장·보내기 대상: AI 결과를 보고 있으면 그것, 아니면 앱 합성 원본 해상도. */
+    suspend fun finalImage(opts: ai.chaz.media.RenderOptions): Pair<Bitmap, List<String>> =
+        aiShown?.let { it to listOf("AI_OPENTOP") } ?: (composer.render(layout, selectedCuts(), opts, preview = false) to emptyList())
+
     // 지금 화면의 설정으로 저장 → 폰으로 보내기 (C4)
     suspend fun saveAndSend() {
         busy = true
         try {
             val opts = composer.options(r, color, stamp, filter)
-            val full = composer.render(layout, selectedCuts(), opts, preview = false)
-            val saved = composer.save(r.session.id, layout, full, opts)
+            val (full, tags) = finalImage(opts)
+            val saved = composer.save(r.session.id, layout, full, opts, tags)
             val n = graph.phone.deliver(saved)
             message = "폰 ${n}대로 보냈어요 · 갤러리에도 저장했어요"
             graph.speech.speak(graph.phrases.sentToPhone())
@@ -109,6 +144,7 @@ fun EditScreen(graph: AppGraph) {
     }
 
     LaunchedEffect(r, layout, single, multi, color, stamp, filter) {
+        showAi = false // 설정을 바꾸면 앱 합성 미리보기로 (AI 결과는 받아 둔 채)
         busy = true
         message = null
         try {
@@ -129,8 +165,11 @@ fun EditScreen(graph: AppGraph) {
                 Modifier.weight(1f).fillMaxHeight().clip(Tokens.cardShape).background(Tokens.surface).border(1.dp, Tokens.line, Tokens.cardShape),
                 contentAlignment = Alignment.Center,
             ) {
-                preview?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().padding(16.dp), contentScale = ContentScale.Fit) }
-                if (busy) {
+                (aiShown ?: preview)?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().padding(16.dp), contentScale = ContentScale.Fit) }
+                if (aiBusy) {
+                    Text("✨ AI가 지붕을 여는 중… (약 15초)", color = Tokens.text, fontSize = 18.sp, modifier = Modifier.align(Alignment.TopCenter).padding(16.dp)
+                        .background(Tokens.bg.copy(alpha = 0.7f), Tokens.controlShape).padding(horizontal = 14.dp, vertical = 8.dp))
+                } else if (busy) {
                     Text("합성 중…", color = Tokens.text, fontSize = 18.sp, modifier = Modifier.align(Alignment.TopCenter).padding(16.dp)
                         .background(Tokens.bg.copy(alpha = 0.7f), Tokens.controlShape).padding(horizontal = 14.dp, vertical = 8.dp))
                 }
@@ -159,18 +198,37 @@ fun EditScreen(graph: AppGraph) {
                     ai.chaz.media.ColorPreset.entries.forEach { f -> Chip(f.label, selected = filter == f) { filter = f } }
                 }
                 Chip(if (stamp) "스탬프 켜짐" else "스탬프 꺼짐", selected = stamp) { stamp = !stamp }
+                Box(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Chip(
+                        when {
+                            aiBusy -> "✨ AI 오픈카 만드는 중…"
+                            showAi -> "앱 합성으로 보기"
+                            aiCutIndex()?.let { it in aiCache } == true -> "✨ AI 오픈카 보기"
+                            else -> "✨ AI 오픈카"
+                        },
+                        selected = showAi,
+                    ) {
+                        if (aiBusy || busy) return@Chip
+                        if (showAi) showAi = false else scope.launch { runAi() }
+                    }
+                }
+                Text(
+                    "고른 컷 1장을 AI가 진짜 오픈카 사진처럼 다시 그려요 (약 15초, 'AI 편집' 표기). 사진이 서버를 거쳐 AI 서비스로 전송돼요.",
+                    color = Tokens.text2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+                )
                 Box(Modifier.weight(1f))
                 message?.let { Text(it, color = Tokens.warn, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp)) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("저장", selected = true) {
-                        if (busy) return@Chip
+                        if (busy || aiBusy) return@Chip
                         scope.launch {
                             busy = true
                             try {
                                 val opts = composer.options(r, color, stamp, filter)
-                                val full = composer.render(layout, selectedCuts(), opts, preview = false)
-                                composer.save(r.session.id, layout, full, opts)
-                                message = "갤러리(Pictures/Cha-z)에 저장했어요"
+                                val (full, tags) = finalImage(opts)
+                                composer.save(r.session.id, layout, full, opts, tags)
+                                message = (if (tags.isNotEmpty()) "AI 오픈카를 " else "") + "갤러리(Pictures/Cha-z)에 저장했어요"
                             } catch (e: Exception) {
                                 message = "저장 실패: ${e.message}"
                             } finally {
@@ -179,7 +237,7 @@ fun EditScreen(graph: AppGraph) {
                         }
                     }
                     Chip("폰으로 보내기", selected = false) {
-                        if (busy) return@Chip
+                        if (busy || aiBusy) return@Chip
                         if (phone.paired) scope.launch { saveAndSend() }
                         else { pairing = true; sendAfterPair = true; graph.phone.startPairing() }
                     }

@@ -3,6 +3,8 @@ package ai.chaz.platform
 import ai.chaz.capture.CameraInventory
 import ai.chaz.capture.CameraRole
 import ai.chaz.capture.PhoneCameraSource
+import ai.chaz.capture.ShootMode
+import ai.chaz.capture.ShootModeStore
 import ai.chaz.sync.DeviceIdentity
 import ai.chaz.media.MediaPipePersonSegmenter
 import ai.chaz.platform.driving.CarUxDrivingGate
@@ -125,6 +127,7 @@ object ProbeChains {
                     if (i.isEmpty()) ProbeResult.Fail("AUTOMOTIVE_LOCATION 실내 카메라 없음") else ProbeResult.Ok("${i.size}대")
                 },
                 Candidate(Ids.INTERIOR_PHONE, "폰 컴패니언 카메라(P5)", Tier.FALLBACK) {
+                    if (ShootModeStore.get(ctx) == ShootMode.DEMO) return@Candidate ProbeResult.Fail("시연 모드 — 샘플 카메라 사용")
                     when (PhoneCameraSource.online(server.baseUrl, DeviceIdentity.carId(ctx))) {
                         true -> ProbeResult.Ok("폰 카메라 모드 켜짐")
                         false -> ProbeResult.Fail("폰에서 '실내 카메라로 쓰기'를 켜면 사용")
@@ -132,6 +135,7 @@ object ProbeChains {
                     }
                 },
                 Candidate(Ids.INTERIOR_WEBCAM, "에뮬레이터 웹캠", Tier.PLATFORM) {
+                    if (ShootModeStore.get(ctx) == ShootMode.LIVE) return@Candidate ProbeResult.Fail("실촬영 모드 — 폰 카메라만 사용")
                     val w = cameras.cameras.filter { !it.roleSource.startsWith("AUTOMOTIVE") }
                     if (w.isEmpty()) ProbeResult.Fail("일반 카메라 없음")
                     else ProbeResult.Ok(w.joinToString { "#${it.id} ${it.lensFacing} ${it.maxSize}" })

@@ -38,5 +38,6 @@ adb shell am start --user 10 -n ai.chaz/.MainActivity --es tab SETTINGS   # SPIK
 - Git Bash에서 adb shell 경로 인자는 `MSYS_NO_PATHCONV=1` 필요 (단, JAVA_HOME 설정과 같이 export하지 말 것).
 - 음성 명령 주입(한글은 base64): `adb shell am start --user 10 -f 0x20000000 -n ai.chaz/.MainActivity --es say64 $(printf '%s' '차즈 그만' | base64 -w0)`
 - 주행/정차 강제 전환(개발용 오버라이드): `--es drive on|off|auto` (위와 같은 am start)
+- 촬영 모드: `--es mode demo|live` (시연 = 에뮬레이터 샘플 실내, 실촬영 = 폰 카메라만)
 - 위치: `--es loc 33.46,126.31|off`(수동), `--es demo start|stop`(데모 경로 — 스팟 가이드 시연)
 - 에뮬레이터는 user 빌드라 `cmd car_service inject-vhal-event` 불가 → 기어·속도는 Virtual Console로.

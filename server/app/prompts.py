@@ -49,3 +49,19 @@ def build_prompt(scene: str, theme_key: str, extra: str | None = None) -> str:
     if extra:
         parts.insert(1, f"Details: {extra.strip()[:200]}.")
     return " ".join(parts)
+
+
+# ✨ AI 오픈카 (POST /frames/opentop). 사람은 그대로, 지붕만 연다 — 얼굴이 바뀌면 의미가 없다.
+OPENTOP_PROMPT = (
+    "Edit this photo taken inside a car from the front, looking back at the cabin. "
+    "Turn the car into a convertible with the top fully down: remove the roof, headliner, rear-view mirror, dashcam, "
+    "pillars and all windows above the door line. Keep the seats, door panels, seatbelts, dashboard and every person "
+    "exactly as they are — identical face, expression, hair, pose, hands and clothes. Do not add, remove or beautify anyone. "
+    "Show the car's own body (door tops, rear deck) around the open cabin so the car is clearly on the road. "
+    "{scenery} Big open sky. Soft warm late-afternoon sunlight falling on the seats and the people, with consistent shadows. "
+    "Natural candid film-photo look, same framing and aspect ratio as the input."
+)
+OPENTOP_SCENERY_FROM_IMAGE = (
+    "Behind the car, use the scenery from the second image (a view from the back of this same car at the same moment)."
+)
+OPENTOP_SCENERY_DEFAULT = "Behind the car: a coastal road with the sea on one side and green hills on the other."

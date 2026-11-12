@@ -161,3 +161,27 @@ def generate(prompt: str) -> bytes:
     if provider == "chat":
         return generate_chat_api(prompt)
     raise ImageGenError(f"알 수 없는 IMAGE_PROVIDER: {provider}")
+
+
+def edit_chat_api(prompt: str, images: list[bytes], model: str | None = None) -> bytes:
+    """사진 편집: chat/completions 에 이미지(들) + 지시문. 비즈라우터의 Gemini 이미지 모델은
+    modalities 를 붙이면 adapter_mapping_unavailable 로 실패해서 빼고 보낸다 (11/12 실측)."""
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for img in images:
+        b64 = base64.b64encode(img).decode()
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    payload = {"model": model or _cfg("OPENTOP_MODEL", "google/gemini-3.1-flash-image"),
+               "messages": [{"role": "user", "content": content}]}
+    with httpx.Client() as c:
+        r = c.post(f"{_base()}/chat/completions", headers=_headers(), json=payload, timeout=_timeout())
+        _raise_for(r)
+        msg = (r.json().get("choices") or [{}])[0].get("message") or {}
+        for img in msg.get("images") or []:
+            url = (img.get("image_url") or {}).get("url") or img.get("url")
+            if url:
+                return _decode_image_ref(url, c)
+        m = re.search(r"(data:image/[a-z]+;base64,[A-Za-z0-9+/=]+)", str(msg.get("content") or ""))
+        if m:
+            return _decode_image_ref(m.group(1), c)
+        # 이미지 없이 글만 오면(거절·안전 필터) 내용 일부만 남긴다
+        raise ImageGenError(f"편집 응답에 이미지 없음: {str(msg.get('content'))[:200]}")

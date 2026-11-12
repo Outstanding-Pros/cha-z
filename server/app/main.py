@@ -240,6 +240,49 @@ def generate(body: GenerateRequest, request: Request):
         return {**meta, **_urls(request, fid), "cached": False, "layout": frames.layout()}
 
 
+@app.post("/frames/opentop")
+async def frames_opentop(interior: UploadFile = File(...), exterior: UploadFile | None = File(None)):
+    """✨ AI 오픈카: 실내 사진(+ 같은 순간 후방 풍경) → 지붕 연 오픈카 사진(JPEG).
+    얼굴이 담긴 사진이라 서버에 저장하지 않고, 로그에도 크기·시간만 남긴다 (CLAUDE.md 규칙 10)."""
+    import asyncio as _aio
+    import io as _io
+
+    from PIL import Image as _Image
+
+    def _jpeg(raw: bytes, max_side: int) -> bytes:
+        try:
+            im = _Image.open(_io.BytesIO(raw)).convert("RGB")
+        except Exception:
+            raise HTTPException(400, "이미지를 읽을 수 없어요")
+        im.thumbnail((max_side, max_side))
+        buf = _io.BytesIO()
+        im.save(buf, "JPEG", quality=90)
+        return buf.getvalue()
+
+    raw = await interior.read()
+    if not raw or len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(413 if raw else 400, "실내 사진은 8MB 이하")
+    images = [_jpeg(raw, 1600)]
+    if exterior is not None:
+        ext = await exterior.read()
+        if ext and len(ext) <= 8 * 1024 * 1024:
+            images.append(_jpeg(ext, 1024))
+    scenery = prompts.OPENTOP_SCENERY_FROM_IMAGE if len(images) > 1 else prompts.OPENTOP_SCENERY_DEFAULT
+    prompt = prompts.OPENTOP_PROMPT.format(scenery=scenery)
+    model = os.getenv("OPENTOP_MODEL", "google/gemini-3.1-flash-image")
+
+    t0 = time.time()
+    try:
+        out = await _aio.to_thread(providers.edit_chat_api, prompt, images, model)
+    except providers.ImageGenError as e:
+        log.warning("opentop failed: %s", str(e)[:200])
+        raise HTTPException(502, "AI 편집에 실패했어요")
+    sec = round(time.time() - t0, 1)
+    jpg = _jpeg(out, 2048)
+    log.info("opentop %.1fs in=%d ext=%s out=%d", sec, len(raw), len(images) > 1, len(jpg))
+    return Response(jpg, media_type="image/jpeg", headers={"X-Seconds": str(sec), "X-Model": model, "Cache-Control": "no-store"})
+
+
 TTS_CACHE = ROOT / "data" / "tts"
 TTS_CACHE.mkdir(parents=True, exist_ok=True)
 
