@@ -71,11 +71,15 @@ android {
 
     buildTypes {
         release {
-            // R8 끔: packageScope(androidx·kotlin 만) 부분 최적화는 범위 밖 코드에서 kotlin 클래스 접근이
-            // IllegalAccessError 로 시작 시 크래시(11/10 실측). 전체 최적화는 MediaPipe·Pleos SDK·JNI keep 규칙이
-            // 필요해서 제출 전에는 안전하게 끈다. 용량 영향은 dex 몇 MB 수준.
+            // R8: 안 쓰는 코드 제거만 (APK 105MB → GitHub 파일 한도 100MB 아래로). 이름 변경·최적화는
+            // proguard-rules.pro 에서 끈다 — 11/10 packageScope 부분 최적화 때 IllegalAccessError 크래시 실측.
+            // Pleos SDK·MediaPipe·JNA·ai.chaz 는 통째로 keep.
             optimization {
-                enable = false
+                enable = true
+                keepRules {
+                    @Suppress("DEPRECATION")
+                    files.add(file("proguard-rules.pro"))
+                }
             }
             signingConfig = if (releaseStore != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
