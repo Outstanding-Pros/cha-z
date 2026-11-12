@@ -122,28 +122,35 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
         return s
     }
 
-    /** QR 띄우기: 토큰을 받아 오고, 폰이 연결될 때까지 2초마다 확인한다. */
+    /**
+     * QR 띄우기. 'QR 닫기'(stopPairing) 전까지 계속 띄워 둔다 — 폰이 연결돼도 닫지 않는다.
+     * 토큰은 한 폰만 쓸 수 있어서, 폰이 연결되거나 10분 만료가 다가오면 새 토큰(새 QR)으로 바꿔 다음 폰도 찍을 수 있게 한다.
+     */
     fun startPairing() {
         poll?.cancel()
         poll = scope.launch {
-            try {
+            suspend fun newTicket(): Boolean = try {
                 val j = http("POST", "/sync/pairing-create", JSONObject().put("carDeviceId", carId))
                 _state.value = _state.value.copy(
                     reachable = true,
                     ticket = Ticket(j.getString("token"), j.getString("url"), (j.getDouble("expiresAt") * 1000).toLong()),
                 )
+                true
             } catch (e: Exception) {
                 Log.w(TAG, "페어링 토큰 실패: ${e.message}")
                 _state.value = _state.value.copy(reachable = false)
-                return@launch
+                false
             }
-            val before = _state.value.phones
+            if (!newTicket()) return@launch
+            var phones = _state.value.phones
             while (isActive) {
                 delay(2_000)
                 val s = refresh()
-                if (s.phones > before) { _state.value = s.copy(ticket = null); break }
                 val t = s.ticket
-                if (t != null && System.currentTimeMillis() > t.expiresAtMs) { _state.value = s.copy(ticket = null); break }
+                val claimed = s.phones > phones
+                phones = maxOf(phones, s.phones)
+                // 연결됐거나 곧 만료(30초 전) → 새 QR. 실패하면 다음 확인 때 다시 시도
+                if (claimed || t == null || System.currentTimeMillis() > t.expiresAtMs - 30_000) newTicket()
             }
         }
     }

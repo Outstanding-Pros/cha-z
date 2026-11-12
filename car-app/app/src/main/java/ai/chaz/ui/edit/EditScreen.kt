@@ -147,7 +147,8 @@ fun EditScreen(graph: AppGraph) {
     }
     // QR 로 연결되면 기다리던 전송을 이어서
     LaunchedEffect(phone.paired, sendAfterPair) {
-        if (phone.paired && sendAfterPair) { sendAfterPair = false; pairing = false; saveAndSend() }
+        // 연결되면 기다리던 전송만 이어 하고, QR 카드는 'QR 닫기' 전까지 그대로 둔다
+        if (phone.paired && sendAfterPair) { sendAfterPair = false; saveAndSend() }
     }
 
     LaunchedEffect(r, layout, single, multi, color, stamp, filter) {

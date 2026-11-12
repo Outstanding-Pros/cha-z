@@ -52,7 +52,7 @@ fun PairingCard(link: PhoneLink, modifier: Modifier = Modifier) {
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("동승자 폰 카메라로 QR을 찍어 주세요", color = Tokens.text, fontSize = 16.sp)
-                    Text("폰과 이 차가 같은 Wi-Fi 에 있어야 해요 · 10분 동안 유효", color = Tokens.text2, fontSize = 13.sp)
+                    Text("연결돼도 QR은 그대로 — 다른 폰도 이어서 찍을 수 있어요 (찍을 때마다 새 QR로 바뀌어요)", color = Tokens.text2, fontSize = 13.sp)
                     Text(t.url, color = Tokens.text2, fontSize = 12.sp)
                 }
             }
