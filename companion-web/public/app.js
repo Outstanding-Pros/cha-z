@@ -244,6 +244,27 @@
     }
   }
 
+  // 직접 셔터로 보낼 자리: 실내(셀카 쪽 카메라) / 전방·후방(뒷면 카메라로 창밖). 고르면 카메라 방향도 맞춘다.
+  const ROLE_LABEL = { INTERIOR: '실내', FRONT: '전방', REAR: '후방' };
+  let pushRole = 'INTERIOR';
+  try { pushRole = localStorage.getItem('pushRole') || 'INTERIOR'; } catch (e) { /* 저장소 없음 */ }
+  function setPushRole(role, flip) {
+    pushRole = ROLE_LABEL[role] ? role : 'INTERIOR';
+    try { localStorage.setItem('pushRole', pushRole); } catch (e) { /* 저장소 없음 */ }
+    document.querySelectorAll('#push-role [data-role]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.role === pushRole);
+      b.setAttribute('aria-checked', String(b.dataset.role === pushRole));
+    });
+    $('cam-shutter').textContent = `📸 ${ROLE_LABEL[pushRole]} 사진으로 차에 보내기`;
+    const want = pushRole === 'INTERIOR' ? 'user' : 'environment';
+    if (flip && cam.stream && cam.facing !== want) {
+      cam.facing = want;
+      openStream().catch(() => toast('카메라를 바꾸지 못했어요'));
+    }
+  }
+  document.querySelectorAll('#push-role [data-role]').forEach((b) => b.addEventListener('click', () => setPushRole(b.dataset.role, true)));
+  setPushRole(pushRole, false);
+
   // 폰 사용자가 직접 셔터: 고해상 한 장을 찍어 차량으로 보낸다 (차가 그 순간 창밖도 같이 찍어 합성 재료로 쓴다).
   async function pushShot() {
     if (!cam.stream) return;
@@ -258,13 +279,14 @@
       const f = new FormData();
       f.append('phoneDeviceId', phoneId);
       f.append('kind', 'push');
+      f.append('role', pushRole);
       f.append('file', b, 'push.jpg');
       const res = await fetch('/sync/camera/frame', { method: 'POST', body: f });
       let d = {}; try { d = await res.json(); } catch (e) { /* 본문 없음 */ }
       if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
       cam.shots++;
       $('cam-count').textContent = `${cam.shots}장 찍음`;
-      toast(d.delivered ? '차로 보냈어요. 차 화면에서 꾸밀 수 있어요' : '차량 앱이 꺼져 있어 전달하지 못했어요');
+      toast(d.delivered ? `${ROLE_LABEL[pushRole]} 사진으로 차에 보냈어요` : '차량 앱이 꺼져 있어 전달하지 못했어요');
     } catch (e) {
       toast('보내지 못했어요: ' + e.message);
     } finally {

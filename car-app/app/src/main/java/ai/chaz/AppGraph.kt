@@ -484,7 +484,7 @@ class AppGraph(context: Context) {
         // 폰 직접 셔터: 폰이 찍어 보낸 사진을 1컷 세션으로 받아 편집 화면에 띄운다
         phone.listen(
             onVoice = { text -> voice.handleText(text, requireWake = false) },
-            onPhoto = { id -> onPhonePhoto(id) },
+            onPhoto = { id, role -> onPhonePhoto(id, role) },
         )
         scope.launch {
             driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
@@ -549,20 +549,21 @@ class AppGraph(context: Context) {
 
     /**
      * 폰 직접 셔터로 온 사진. 먼저 받아 두고(서버는 60초만 보관), 차가 촬영 중이면 끝날 때까지 기다렸다가 넣는다.
-     * 창밖은 받은 순간 차 카메라로 같이 찍는다. 주행 중이면 저장만(편집 잠금) — 상태 머신이 정한다.
+     * 폰이 고른 자리(실내·전방·후방)에 넣고, 나머지 자리는 받은 순간 차 카메라로 같이 찍는다.
+     * 주행 중이면 저장만(편집 잠금) — 상태 머신이 정한다.
      */
-    private suspend fun onPhonePhoto(photoId: String) {
+    private suspend fun onPhonePhoto(photoId: String, roleName: String) {
+        val role = when (roleName) { "FRONT" -> CameraRole.FRONT; "REAR" -> CameraRole.REAR; else -> CameraRole.INTERIOR }
         val jpeg = phone.fetchPushed(photoId) ?: return
         capture.model.first { it.state !is AppState.Capturing }
         val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = 1)).config
         val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.PHONE_SHUTTER,
             spotName = spotGuide.placeForSession())
-        val exterior = _cameras.value.filter { it.role != CameraRole.INTERIOR }
-        val cut = runCatching { sessionStore.saveImported(session, jpeg, exterior) }
+        val cut = runCatching { sessionStore.saveImported(session, jpeg, role, _cameras.value) }
             .onFailure { android.util.Log.w("ChazPhone", "폰 사진 저장 실패: ${it.javaClass.simpleName}") }.getOrNull() ?: return
-        android.util.Log.i("ChazPhone", "폰 직접 셔터 사진 받음 (창밖 ${cut.frames.size - 1}장)")
+        android.util.Log.i("ChazPhone", "폰 직접 셔터 사진 받음 (자리 $role, 차 카메라 ${cut.frames.size - 1}장)")
         if (capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, listOf(cut), emptyList(), stopped = false))) {
-            runCatching { speech.speak(phrases.phonePhoto(driving.restricted.value)) }
+            runCatching { speech.speak(phrases.phonePhoto(role, driving.restricted.value)) }
         }
     }
 

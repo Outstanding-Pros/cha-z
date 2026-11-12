@@ -86,6 +86,7 @@ async def upload_frame(
     kind: str = Form(..., pattern="^(preview|shot|push)$"),
     shotId: str | None = Form(None, max_length=64),
     takenAtMs: float | None = Form(None, description="폰이 실제로 찍은 시각(서버 시계) — 예약 오차 확인용"),
+    role: str = Form("INTERIOR", pattern="^(INTERIOR|FRONT|REAR)$", description="push 전용: 차량 어느 자리(실내·전방·후방) 사진인지"),
     file: UploadFile = File(...),
 ):
     with _db() as con:
@@ -102,7 +103,7 @@ async def upload_frame(
     if len(data) > MAX_SHOT:
         raise HTTPException(413, "사진이 너무 커요")
     if kind == "push":
-        return await _push(car, data)
+        return await _push(car, data, role)
     entry = _shots.get(shotId or "")
     if not entry or entry[0] != car:
         raise HTTPException(410, "이미 끝난 촬영이에요")
@@ -115,7 +116,7 @@ async def upload_frame(
     return {"ok": True}
 
 
-async def _push(car: str, data: bytes) -> dict:
+async def _push(car: str, data: bytes, role: str) -> dict:
     """폰에서 직접 셔터를 누른 사진. 차량 앱이 SSE 를 듣고 있으면 phone.photo 로 알리고, 차가 가져가면 지운다."""
     now = time.time()
     for k, v in list(_pushed.items()):
@@ -126,7 +127,7 @@ async def _push(car: str, data: bytes) -> dict:
     photo_id = secrets.token_urlsafe(9)
     _pushed[photo_id] = (car, data, now)
     listening = bool(_subscribers.get(car))
-    await publish(car, "phone.photo", {"photoId": photo_id, "at": now})
+    await publish(car, "phone.photo", {"photoId": photo_id, "role": role, "at": now})
     return {"ok": True, "delivered": listening}
 
 

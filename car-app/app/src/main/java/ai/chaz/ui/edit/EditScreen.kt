@@ -114,6 +114,8 @@ fun EditScreen(graph: AppGraph) {
             showAi = true
         } catch (e: ai.chaz.sync.AiOpenTopClient.Failed) {
             message = "${e.message} — 앱 합성 결과를 쓸 수 있어요"
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // 화면이 바뀌어(새 결과 등) 취소된 것은 오류가 아니다
         } catch (e: Exception) {
             message = "AI 편집 실패 — 앱 합성 결과를 쓸 수 있어요"
         } finally {
@@ -135,6 +137,8 @@ fun EditScreen(graph: AppGraph) {
             val n = graph.deliver(saved)
             message = "폰 ${n}대로 보냈어요 · 갤러리에도 저장했어요"
             graph.speech.speak(graph.phrases.sentToPhone())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // 화면이 바뀌어(새 결과 등) 취소된 것은 오류가 아니다
         } catch (e: Exception) {
             message = "보내지 못했어요: ${e.message}"
         } finally {
@@ -153,6 +157,8 @@ fun EditScreen(graph: AppGraph) {
         try {
             val opts = composer.options(r, color, stamp, filter)
             preview = composer.render(layout, selectedCuts(), opts, preview = true)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // 화면이 바뀌어(새 결과 등) 취소된 것은 오류가 아니다
         } catch (e: Exception) {
             preview = null
             message = e.message ?: "합성 실패"
@@ -247,6 +253,8 @@ fun EditScreen(graph: AppGraph) {
                                 val (full, tags) = finalImage(opts)
                                 composer.save(r.session.id, layout, full, opts, tags)
                                 message = (if (tags.isNotEmpty()) "AI 오픈카를 " else "") + "갤러리(Pictures/Cha-z)에 저장했어요"
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e // 화면이 바뀌어(새 결과 등) 취소된 것은 오류가 아니다
                             } catch (e: Exception) {
                                 message = "저장 실패: ${e.message}"
                             } finally {

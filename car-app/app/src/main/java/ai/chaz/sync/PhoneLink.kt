@@ -51,7 +51,8 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
      * 서버 이벤트(SSE /sync/events?deviceId=차량) 구독. 폰 음성 리모컨(voice.command)·폰 직접 셔터(phone.photo)·페어링 수락을 받는다.
      * 끊기면 3초 뒤 다시 붙는다. 문장 내용은 로그에 남기지 않는다.
      */
-    fun listen(onVoice: suspend (String) -> Unit, onPhoto: suspend (String) -> Unit = {}) {
+    /** onPhoto(photoId, role): role 은 폰이 고른 자리 — "INTERIOR" | "FRONT" | "REAR". */
+    fun listen(onVoice: suspend (String) -> Unit, onPhoto: suspend (String, String) -> Unit = { _, _ -> }) {
         if (events?.isActive == true) return
         events = scope.launch(Dispatchers.IO) {
             while (isActive) {
@@ -78,8 +79,9 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
                                                     Log.i("ChazPhone", "폰 음성 명령 ${t.length}자")
                                                     scope.launch { onVoice(t) }
                                                 }
-                                            "phone.photo" -> runCatching { JSONObject(d).getString("photoId") }.getOrNull()
-                                                ?.let { id -> scope.launch { onPhoto(id) } }
+                                            "phone.photo" -> runCatching { JSONObject(d) }.getOrNull()
+                                                ?.let { j -> j.optString("photoId").takeIf { it.isNotBlank() }?.let { id -> id to j.optString("role", "INTERIOR") } }
+                                                ?.let { (id, role) -> scope.launch { onPhoto(id, role) } }
                                             "pairing.claimed" -> scope.launch { refresh() }
                                         }
                                     }
