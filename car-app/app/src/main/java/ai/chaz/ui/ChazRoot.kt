@@ -48,7 +48,7 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
     val nearest by graph.spotGuide.nearest.collectAsState()
     val nextSpot = nearest?.let { "다음 스팟 ${it.spot.name} ${ai.chaz.ui.light.dist(it.distanceM)}" }
     val (line1, line2) = when (state) {
-        is AppState.Capturing -> "촬영 중 · ${state.session.config.count}컷 중 ${state.shotsTaken}" to "창밖과 함께 웃어 주세요"
+        is AppState.Capturing -> "촬영 중 · ${state.session.config.count}컷 중 ${state.shotsTaken}" to "창밖 풍경과 함께 담고 있어요" // 주행 화면: 포즈·시선 유도 문구 없음
         is AppState.Saved -> "저장했어요" to "정차 후 편집하거나 '차즈 스마트폰에서 편집할게'라고 말해 주세요"
         else -> "촬영 대기" to (nextSpot ?: "'차~즈'라고 말하면 찍어요")
     }

@@ -107,6 +107,12 @@ class CaptureSessionEngineTest {
         assertEquals(3, store.finished!!.second.size)
     }
 
+    @Test fun `주행 중에 시작하면 포즈 유도 없는 안내`() = runTest {
+        val (engine) = setup()
+        engine.run(session(), sources, adjusted = false, isDriving = { true })
+        assertEquals("start-driving 12s 4", speechLog.first())
+    }
+
     @Test fun `주행 중에 끝나면 주행용 종료 안내`() = runTest {
         val (engine) = setup()
         engine.run(session(), sources, adjusted = false, isDriving = { true })

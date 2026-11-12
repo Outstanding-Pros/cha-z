@@ -66,7 +66,13 @@ class CaptureSessionEngine(
         sources.forEach { it.start() }
 
         onProgress(Progress(Phase.ANNOUNCING, 0, 0, cfg.count, null))
-        speakSafely(if (adjusted) phrases.captureAdjusted(cfg) else phrases.captureStart(cfg))
+        speakSafely(
+            when {
+                adjusted -> phrases.captureAdjusted(cfg)
+                isDriving() -> phrases.captureStartDriving(cfg) // 주행 중: '웃어 주세요' 같은 포즈 유도 없이
+                else -> phrases.captureStart(cfg)
+            },
+        )
 
         val t0 = now()
         suspend fun until(t: Long) { val d = t - now(); if (d > 0) delay(d) }
