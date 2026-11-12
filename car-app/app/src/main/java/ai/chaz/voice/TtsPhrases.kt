@@ -26,6 +26,7 @@ class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
     override fun stopped() = res.getString(R.string.tts_stopped)
     fun albumArrived(n: Int) = res.getString(R.string.tts_album_arrived, n)
     fun albumSent(n: Int) = res.getString(R.string.tts_album_sent, n)
+    fun phonePhoto(driving: Boolean) = res.getString(if (driving) R.string.tts_phone_photo_driving else R.string.tts_phone_photo)
     override fun help() = res.getString(R.string.tts_help)
     override fun unknown() = res.getString(R.string.tts_unknown)
     override fun bgmNotReady() = res.getString(R.string.tts_bgm_not_ready)

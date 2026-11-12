@@ -67,6 +67,14 @@ class CaptureController(
         return true
     }
 
+    /** 차 촬영 없이 만들어진 세션(폰 직접 셔터)을 결과로 띄운다. 정차 중이면 편집, 주행 중이면 저장(편집 잠금). */
+    fun import(result: CaptureSessionEngine.Result): Boolean {
+        if (_model.value.state is AppState.Capturing) return false
+        _lastResult.value = result
+        dispatch(AppEvent.Imported(result.session.id))
+        return true
+    }
+
     fun stop() {
         if (_model.value.state is AppState.Capturing) engine.stop()
         else dispatch(AppEvent.Stop)

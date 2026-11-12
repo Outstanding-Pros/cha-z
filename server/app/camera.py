@@ -11,6 +11,8 @@
 | 차량 | GET  /sync/camera/result/{shotId} | 예약한 컷의 JPEG (셔터 시각에 호출, 올 때까지 대기)       |
 | 차량 | POST /sync/camera/shot            | 즉시 촬영 (예약 실패 시 대체): capture.shot → 업로드 → 그 JPEG 를 응답으로 |
 | 폰   | POST /sync/camera/frame (shot)    | shotId 에 해당하는 고해상 프레임                          |
+| 폰   | POST /sync/camera/frame (push)    | 폰 사용자가 직접 셔터 → 차량에 phone.photo 이벤트       |
+| 차량 | GET  /sync/camera/pushed/{photoId}| 폰이 직접 찍어 보낸 사진 (한 번 가져가면 지움, 60초 보관) |
 | 둘다 | GET  /sync/time                   | 서버 시각(ms) — 차량·폰이 서버 시계에 맞춰 예약 시각을 지킨다 |
 
 예약 촬영이 필요한 이유: Cloudflare 를 거치면 이벤트가 폰에 닿기까지 0.3~1.8초. 셔터 순간에 '찍어'를 보내면
@@ -30,7 +32,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from .sync import _car_of, _db, _paired_phones, publish
+from .sync import _car_of, _db, _paired_phones, _subscribers, publish
 
 log = logging.getLogger("photolive.camera")
 router = APIRouter()
@@ -52,7 +54,9 @@ class _Latest:
 _latest: dict[str, _Latest] = {}                    # carDeviceId → 최신 미리보기
 _shots: dict[str, tuple[str, asyncio.Future, float]] = {}  # shotId → (carDeviceId, 결과, 만든 시각)
 SHOT_TTL_SEC = 30.0
-_shot_at: dict[str, float] = {}  # 예약 촬영 shotId → 셔터 시각(서버 ms), 오차 로그용
+_shot_at: dict[str, float] = {}
+_pushed: dict[str, tuple[str, bytes, float]] = {}  # photoId → (carDeviceId, JPEG, 받은 시각) — 폰 직접 셔터
+PUSH_TTL_SEC = 60.0  # 예약 촬영 shotId → 셔터 시각(서버 ms), 오차 로그용
 
 
 def _new_shot(car: str) -> tuple[str, asyncio.Future]:
@@ -79,7 +83,7 @@ def _online(car: str) -> _Latest | None:
 @router.post("/sync/camera/frame")
 async def upload_frame(
     phoneDeviceId: str = Form(..., min_length=8, max_length=64),
-    kind: str = Form(..., pattern="^(preview|shot)$"),
+    kind: str = Form(..., pattern="^(preview|shot|push)$"),
     shotId: str | None = Form(None, max_length=64),
     takenAtMs: float | None = Form(None, description="폰이 실제로 찍은 시각(서버 시계) — 예약 오차 확인용"),
     file: UploadFile = File(...),
@@ -97,6 +101,8 @@ async def upload_frame(
         return {"ok": True}
     if len(data) > MAX_SHOT:
         raise HTTPException(413, "사진이 너무 커요")
+    if kind == "push":
+        return await _push(car, data)
     entry = _shots.get(shotId or "")
     if not entry or entry[0] != car:
         raise HTTPException(410, "이미 끝난 촬영이에요")
@@ -107,6 +113,30 @@ async def upload_frame(
     if not fut.done():
         fut.set_result(data)
     return {"ok": True}
+
+
+async def _push(car: str, data: bytes) -> dict:
+    """폰에서 직접 셔터를 누른 사진. 차량 앱이 SSE 를 듣고 있으면 phone.photo 로 알리고, 차가 가져가면 지운다."""
+    now = time.time()
+    for k, v in list(_pushed.items()):
+        if now - v[2] > PUSH_TTL_SEC:
+            _pushed.pop(k, None)
+    if sum(1 for v in _pushed.values() if v[0] == car) >= 5:
+        raise HTTPException(429, "차량이 아직 앞의 사진을 받고 있어요. 잠시 뒤 다시 찍어 주세요")
+    photo_id = secrets.token_urlsafe(9)
+    _pushed[photo_id] = (car, data, now)
+    listening = bool(_subscribers.get(car))
+    await publish(car, "phone.photo", {"photoId": photo_id, "at": now})
+    return {"ok": True, "delivered": listening}
+
+
+@router.get("/sync/camera/pushed/{photo_id}")
+def camera_pushed(photo_id: str, carDeviceId: str):
+    entry = _pushed.get(photo_id)
+    if not entry or entry[0] != carDeviceId:
+        raise HTTPException(404, "없는 사진이에요")
+    _pushed.pop(photo_id, None)
+    return Response(entry[1], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/sync/camera/status")

@@ -244,6 +244,34 @@
     }
   }
 
+  // 폰 사용자가 직접 셔터: 고해상 한 장을 찍어 차량으로 보낸다 (차가 그 순간 창밖도 같이 찍어 합성 재료로 쓴다).
+  async function pushShot() {
+    if (!cam.stream) return;
+    const btn = $('cam-shutter');
+    btn.disabled = true;
+    try {
+      const b = await grab(1920, 0.92);
+      if (!b) { toast('카메라가 아직 준비 중이에요'); return; }
+      $('cam-flash').classList.add('on');
+      setTimeout(() => $('cam-flash').classList.remove('on'), 60);
+      if (navigator.vibrate) navigator.vibrate(40);
+      const f = new FormData();
+      f.append('phoneDeviceId', phoneId);
+      f.append('kind', 'push');
+      f.append('file', b, 'push.jpg');
+      const res = await fetch('/sync/camera/frame', { method: 'POST', body: f });
+      let d = {}; try { d = await res.json(); } catch (e) { /* 본문 없음 */ }
+      if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
+      cam.shots++;
+      $('cam-count').textContent = `${cam.shots}장 찍음`;
+      toast(d.delivered ? '차로 보냈어요. 차 화면에서 꾸밀 수 있어요' : '차량 앱이 꺼져 있어 전달하지 못했어요');
+    } catch (e) {
+      toast('보내지 못했어요: ' + e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; }, 1500); // 연타 방지
+    }
+  }
+
   async function keepAwake() {
     try { if ('wakeLock' in navigator && !cam.wake) cam.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* 지원 안 함 */ }
     if (cam.wake) cam.wake.addEventListener('release', () => { cam.wake = null; });
@@ -291,6 +319,7 @@
 
   $('cam-go').addEventListener('click', camStart);
   $('cam-stop').addEventListener('click', camStop);
+  $('cam-shutter').addEventListener('click', pushShot);
   $('cam-flip').addEventListener('click', async () => {
     cam.facing = cam.facing === 'user' ? 'environment' : 'user';
     try { await openStream(); } catch (e) { toast('카메라를 바꾸지 못했어요'); }

@@ -64,6 +64,20 @@ class FileSessionStore(context: Context) : SessionStore {
         }
     }
 
+    /**
+     * 폰에서 직접 찍어 보낸 사진으로 1컷 세션을 만든다. 실내 = 폰 사진, 창밖은 받은 순간 차 카메라(exterior)로 같이 찍어
+     * 오픈카·경로형 합성 재료로 쓴다. 차 카메라가 없으면 실내만.
+     */
+    suspend fun saveImported(session: Session, interiorJpeg: ByteArray, exterior: List<CameraSource>): Cut {
+        begin(session)
+        val outside = if (exterior.isEmpty()) emptyList() else saveCut(session, 1, 0, exterior).frames
+        val f = File(dir(session), "cuts/01_interior.jpg")
+        withContext(Dispatchers.IO) { f.writeBytes(interiorJpeg) }
+        val cut = Cut(session.id, 1, 0, listOf(Frame(CameraRole.INTERIOR, f.absolutePath, SourceKind.PHONE_CAMERA)) + outside)
+        finish(session, listOf(cut), emptyList(), stopped = false)
+        return cut
+    }
+
     override fun clipPath(session: Session, role: CameraRole): String =
         File(dir(session), "clips/${role.name.lowercase()}").absolutePath
 

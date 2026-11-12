@@ -48,10 +48,10 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
     private var events: Job? = null
 
     /**
-     * 서버 이벤트(SSE /sync/events?deviceId=차량) 구독. 폰 음성 리모컨(voice.command)·페어링 수락을 받는다.
+     * 서버 이벤트(SSE /sync/events?deviceId=차량) 구독. 폰 음성 리모컨(voice.command)·폰 직접 셔터(phone.photo)·페어링 수락을 받는다.
      * 끊기면 3초 뒤 다시 붙는다. 문장 내용은 로그에 남기지 않는다.
      */
-    fun listen(onVoice: suspend (String) -> Unit) {
+    fun listen(onVoice: suspend (String) -> Unit, onPhoto: suspend (String) -> Unit = {}) {
         if (events?.isActive == true) return
         events = scope.launch(Dispatchers.IO) {
             while (isActive) {
@@ -78,6 +78,8 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
                                                     Log.i("ChazPhone", "폰 음성 명령 ${t.length}자")
                                                     scope.launch { onVoice(t) }
                                                 }
+                                            "phone.photo" -> runCatching { JSONObject(d).getString("photoId") }.getOrNull()
+                                                ?.let { id -> scope.launch { onPhoto(id) } }
                                             "pairing.claimed" -> scope.launch { refresh() }
                                         }
                                     }
@@ -91,6 +93,21 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
                 delay(3_000)
             }
         }
+    }
+
+    /** 폰이 직접 찍어 보낸 사진(JPEG). 서버는 한 번 가져가면 지운다. 없거나 실패하면 null. */
+    suspend fun fetchPushed(photoId: String): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            val conn = ServerHttp.open("$baseUrl/sync/camera/pushed/$photoId?carDeviceId=$carId").apply {
+                connectTimeout = 3_000; readTimeout = 10_000
+            }
+            try {
+                if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
+                conn.inputStream.use { it.readBytes() }
+            } finally {
+                conn.disconnect()
+            }
+        }.onFailure { Log.w(TAG, "폰 사진 받기 실패: ${it.message}") }.getOrNull()
     }
 
     /** 연결 상태 한 번 확인. */

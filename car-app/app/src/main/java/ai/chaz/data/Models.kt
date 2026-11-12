@@ -42,7 +42,9 @@ object CaptureRules {
     }
 }
 
-enum class TriggerSource { WAKE_WORD, VOICE_BUTTON, SPOT_GUIDE, APP_LAUNCH, SHUTTER_BUTTON }
+enum class TriggerSource { WAKE_WORD, VOICE_BUTTON, SPOT_GUIDE, APP_LAUNCH, SHUTTER_BUTTON,
+    /** 연결된 폰에서 직접 셔터를 눌러 보낸 사진 (차 촬영 세션 없이 1컷 세션으로 들어온다). */
+    PHONE_SHUTTER }
 
 enum class SessionStatus { RAW, EDITED, DELIVERED }
 

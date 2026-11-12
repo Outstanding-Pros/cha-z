@@ -79,6 +79,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -113,13 +114,15 @@ class AppGraph(context: Context) {
     val phrases = ResourceTtsPhrases(appContext)
     private val cues by lazy { SoundPoolCuePlayer(appContext) }
 
+    private val sessionStore by lazy { FileSessionStore(appContext) }
+
     val capture by lazy {
         CaptureController(
             scope = scope,
             machine = AppStateMachine { trigger, config ->
                 Session(newSessionId(), System.currentTimeMillis(), config, trigger, spotName = spotGuide.placeForSession())
             },
-            engine = CaptureSessionEngine(speech, cues, FileSessionStore(appContext), phrases),
+            engine = CaptureSessionEngine(speech, cues, sessionStore, phrases),
             sources = { _cameras.value },
             isDriving = { driving.restricted.value },
         )
@@ -478,7 +481,11 @@ class AppGraph(context: Context) {
         reprobe()
         watchPhoneCamera()
         // 폰 음성 리모컨: 폰에서 말한 문장을 차 마이크로 들은 것처럼 처리 (버튼을 눌렀으니 호출어는 생략)
-        phone.listen { text -> voice.handleText(text, requireWake = false) }
+        // 폰 직접 셔터: 폰이 찍어 보낸 사진을 1컷 세션으로 받아 편집 화면에 띄운다
+        phone.listen(
+            onVoice = { text -> voice.handleText(text, requireWake = false) },
+            onPhoto = { id -> onPhonePhoto(id) },
+        )
         scope.launch {
             driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
         }
@@ -538,6 +545,25 @@ class AppGraph(context: Context) {
         old.forEach { it.stop() }
         _cameras.value = fresh
         android.util.Log.i("ChazCamera", "소스: " + fresh.joinToString { "${it.role}=${it.label}" })
+    }
+
+    /**
+     * 폰 직접 셔터로 온 사진. 먼저 받아 두고(서버는 60초만 보관), 차가 촬영 중이면 끝날 때까지 기다렸다가 넣는다.
+     * 창밖은 받은 순간 차 카메라로 같이 찍는다. 주행 중이면 저장만(편집 잠금) — 상태 머신이 정한다.
+     */
+    private suspend fun onPhonePhoto(photoId: String) {
+        val jpeg = phone.fetchPushed(photoId) ?: return
+        capture.model.first { it.state !is AppState.Capturing }
+        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = 1)).config
+        val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.PHONE_SHUTTER,
+            spotName = spotGuide.placeForSession())
+        val exterior = _cameras.value.filter { it.role != CameraRole.INTERIOR }
+        val cut = runCatching { sessionStore.saveImported(session, jpeg, exterior) }
+            .onFailure { android.util.Log.w("ChazPhone", "폰 사진 저장 실패: ${it.javaClass.simpleName}") }.getOrNull() ?: return
+        android.util.Log.i("ChazPhone", "폰 직접 셔터 사진 받음 (창밖 ${cut.frames.size - 1}장)")
+        if (capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, listOf(cut), emptyList(), stopped = false))) {
+            runCatching { speech.speak(phrases.phonePhoto(driving.restricted.value)) }
+        }
     }
 
     private fun newSessionId(): String =

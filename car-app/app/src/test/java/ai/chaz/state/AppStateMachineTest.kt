@@ -26,6 +26,15 @@ class AppStateMachineTest {
         assertEquals(AppState.Editing("s1"), saved.on(AppEvent.DrivingChanged(false)).state)
     }
 
+    @Test fun `폰 직접 셔터 사진은 정차 중 편집, 주행 중 저장, 촬영 중에는 무시`() {
+        assertEquals(AppState.Editing("p1"), AppModel().on(AppEvent.Imported("p1")).state)
+        assertEquals(AppState.Saved("p1"), AppModel(restricted = true).on(AppEvent.Imported("p1")).state)
+        val capturing = AppModel().on(trigger)
+        assertEquals(capturing, capturing.on(AppEvent.Imported("p1")))
+        // 다른 결과를 편집하던 중이면 새 사진으로 바뀐다
+        assertEquals(AppState.Editing("p2"), AppModel().on(trigger, AppEvent.SessionFinished, AppEvent.Imported("p2")).state)
+    }
+
     @Test fun `편집 중 주행이 시작되면 Saved 로`() {
         val s = AppModel().on(trigger, AppEvent.SessionFinished, AppEvent.DrivingChanged(true)).state
         assertEquals(AppState.Saved("s1"), s)
