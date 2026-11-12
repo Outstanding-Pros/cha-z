@@ -129,8 +129,8 @@ private fun ControlPanel(graph: AppGraph, progress: CaptureSessionEngine.Progres
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Chip("사진", selected = true) {}
-                Chip("영상", selected = false, enabled = false) {}
-                Chip("동시", selected = false, enabled = false) {}
+                Chip("영상 · 준비 중", selected = false, enabled = false) {}
+                Chip("동시 · 준비 중", selected = false, enabled = false) {}
                 Spacer(Modifier.weight(1f))
                 val cfg = graph.capture.lastConfig
                 Text("촬영 설정", color = Tokens.text2, fontSize = Tokens.labelSize)
@@ -139,7 +139,13 @@ private fun ControlPanel(graph: AppGraph, progress: CaptureSessionEngine.Progres
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("레이아웃", color = Tokens.text2, fontSize = Tokens.labelSize, modifier = Modifier.width(72.dp))
                 layouts.forEach { l ->
-                    Chip(l?.let { if (prefs.layout == l) "${it.id} ${it.label}" else it.id } ?: "원본", selected = prefs.layout == l, enabled = layoutOk(l)) { setLayout(l) }
+                    val label = when {
+                        l == null -> "원본"
+                        !layoutOk(l) && l == Layout.SURROUND_SEQUENCE -> "${l.id} · 준비 중" // 2차 PT 예정
+                        prefs.layout == l -> "${l.id} ${l.label}"
+                        else -> l.id
+                    }
+                    Chip(label, selected = prefs.layout == l, enabled = layoutOk(l)) { setLayout(l) }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
