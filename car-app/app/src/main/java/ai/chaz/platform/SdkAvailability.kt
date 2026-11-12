@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.update
 enum class Feature(val label: String, val adapter: String) {
     DRIVING_GATE("주행 규제", "DrivingGate"),
     VEHICLE_STATE("차량 상태", "VehicleStateProvider"),
+    DOOR("도어 (도착 감지)", "DoorSensor"),
     AMBIENT_LIGHT("앰비언트 라이트", "AmbientLightController"),
     LOCATION("위치·경로", "LocationSource"),
     WAKE_WORD("호출어", "WakeWordDetector"),

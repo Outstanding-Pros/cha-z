@@ -129,7 +129,7 @@ fun EditScreen(graph: AppGraph) {
             val opts = composer.options(r, color, stamp, filter)
             val (full, tags) = finalImage(opts)
             val saved = composer.save(r.session.id, layout, full, opts, tags)
-            val n = graph.phone.deliver(saved)
+            val n = graph.deliver(saved)
             message = "폰 ${n}대로 보냈어요 · 갤러리에도 저장했어요"
             graph.speech.speak(graph.phrases.sentToPhone())
         } catch (e: Exception) {

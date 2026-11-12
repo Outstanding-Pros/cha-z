@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 /** C6 설정 — 주행 규제 판정과 'SDK 연동 상태' 패널. */
 @Composable
@@ -56,6 +57,29 @@ fun SettingsScreen(graph: AppGraph) {
                         "\n전·후방 풍경은 두 모드 모두 시뮬레이션(실차 카메라 없음).",
                     color = Tokens.text2, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+        }
+        item {
+            val auto by graph.autoAlbum.collectAsState()
+            val album by graph.album.collectAsState()
+            val phone by graph.phone.state.collectAsState()
+            val doorName by graph.doorSensorName.collectAsState()
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            androidx.compose.runtime.LaunchedEffect(Unit) { graph.refreshAlbum() }
+            Card(title = "여정 앨범") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Chip("도착하면 자동 전송", selected = auto) { graph.setAutoAlbum(!auto) }
+                    Chip(if (album.sending) "보내는 중…" else "지금 앨범 보내기", selected = false, icon = ai.chaz.ui.ChazIcons.send, enabled = !album.sending) {
+                        scope.launch { graph.sendAlbum(auto = false) }
+                    }
+                }
+                Text(
+                    (if (auto) "정차 중에 문이 열리면 오늘 찍은 사진 중 아직 안 보낸 것을 폰으로 보내요."
+                    else "자동 전송이 꺼져 있어요. '지금 앨범 보내기'나 \"차즈, 폰으로 보내줘\"로 보낼 수 있어요.") +
+                        "\n도착 감지: $doorName  ·  안 보낸 사진 ${album.pending}장  ·  폰 " + (if (phone.paired) "연결됨" else "연결 안 됨"),
+                    color = Tokens.text2, fontSize = 15.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 10.dp),
+                )
+                album.last?.let { Text(it, color = Tokens.ok, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp)) }
             }
         }
         item {

@@ -253,6 +253,98 @@ class AppGraph(context: Context) {
     // 폰 연결 (T10: 로컬 서버가 Supabase 대체)
     val phone = PhoneLink(BuildConfig.CHAZ_SERVER_URL, DeviceIdentity.carId(appContext), scope)
 
+    // ---- 여정 앨범 (도착 = 정차 중 도어 열림 → 오늘 안 보낸 결과물 전부 폰으로) ----
+    private val prefs = appContext.getSharedPreferences("chaz", android.content.Context.MODE_PRIVATE)
+    private val _autoAlbum = MutableStateFlow(prefs.getBoolean("autoAlbum", true))
+    /** 설정: 도착하면 자동 전송 (기본 켜짐). 꺼도 '지금 앨범 보내기'·음성 전송은 된다. */
+    val autoAlbum: StateFlow<Boolean> = _autoAlbum.asStateFlow()
+    fun setAutoAlbum(on: Boolean) { prefs.edit().putBoolean("autoAlbum", on).apply(); _autoAlbum.value = on }
+
+    private val pleosDoor by lazy { ai.chaz.platform.vehicle.PleosDoorSensor(vehicleHub) }
+    private var doorSensor: ai.chaz.platform.vehicle.DoorSensor? = null
+    /** 개발·시연용 도어 신호 (--es door open|close). 실제 센서 값보다 우선. */
+    private val debugDoor = MutableStateFlow<Boolean?>(null)
+    private val sensorDoor = MutableStateFlow<Boolean?>(null)
+    private var doorWatch: kotlinx.coroutines.Job? = null
+    private var lastAutoAlbumMs: Long? = null
+    private val _doorName = MutableStateFlow("판정 중")
+    /** 설정 화면 표시용: 도착 감지에 쓰는 구현 이름. */
+    val doorSensorName: StateFlow<String> = _doorName.asStateFlow()
+
+    private val _album = MutableStateFlow(AlbumStatus())
+    data class AlbumStatus(val pending: Int = 0, val sending: Boolean = false, val last: String? = null)
+    val album: StateFlow<AlbumStatus> = _album.asStateFlow()
+
+    private fun deliveredIds(): Set<String> = prefs.getStringSet("deliveredIds", emptySet()).orEmpty()
+    private fun markDelivered(id: String) { prefs.edit().putStringSet("deliveredIds", deliveredIds() + id).apply() }
+
+    private fun todayStartMs(): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    suspend fun pendingAlbum(): List<ai.chaz.media.Result> { val sent = deliveredIds(); return composer.savedSince(todayStartMs()).filter { it.id !in sent } }
+    suspend fun refreshAlbum() { _album.value = _album.value.copy(pending = pendingAlbum().size) }
+
+    /** 결과물 하나를 폰으로 (보낸 것으로 기록 → 앨범에서 다시 보내지 않음). */
+    suspend fun deliver(result: ai.chaz.media.Result): Int = phone.deliver(result).also { markDelivered(result.id); refreshAlbum() }
+
+    /** 오늘 안 보낸 결과물 전부를 폰으로. 보낸 장 수 (실패하면 거기서 멈춘다). */
+    suspend fun sendAlbum(auto: Boolean): Int {
+        if (_album.value.sending) return 0
+        val list = pendingAlbum()
+        if (list.isEmpty()) { _album.value = _album.value.copy(pending = 0, last = "보낼 새 사진이 없어요"); return 0 }
+        if (!phone.state.value.paired) { _album.value = _album.value.copy(last = "폰이 연결되지 않았어요"); return 0 }
+        _album.value = _album.value.copy(sending = true)
+        var n = 0
+        try {
+            for (r in list) {
+                val ok = runCatching { phone.deliver(r) }.onFailure { android.util.Log.w("ChazAlbum", "전송 실패: ${it.message}") }.isSuccess
+                if (!ok) break
+                markDelivered(r.id); n++
+            }
+        } finally {
+            _album.value = AlbumStatus(pending = pendingAlbum().size, sending = false, last = (if (auto) "도착 · " else "") + "${n}장을 폰으로 보냈어요")
+        }
+        if (n > 0) runCatching { speech.speak(if (auto) phrases.albumArrived(n) else phrases.albumSent(n)) }
+        return n
+    }
+
+    fun setDebugDoor(open: Boolean?) { debugDoor.value = open }
+
+    private fun attachDoor() {
+        val want = if (availability.selectedId(Feature.DOOR) == ProbeChains.Ids.DOOR_PLEOS) pleosDoor else null
+        if (want !== doorSensor) {
+            doorSensor?.stop()
+            doorSensor = want
+            sensorDoor.value = null
+            _doorName.value = want?.name ?: "감지 안 함 (수동 전송만)"
+            want?.let { s ->
+                scope.launch {
+                    runCatching { s.start() }.onFailure { android.util.Log.w("ChazAlbum", "도어 감지 시작 실패: ${it.message}") }
+                    s.anyOpen.collect { sensorDoor.value = it }
+                }
+            }
+        }
+        if (want == null) _doorName.value = "감지 안 함 (수동 전송만)"
+        if (doorWatch?.isActive == true) return
+        doorWatch = scope.launch {
+            var was: Boolean? = null
+            kotlinx.coroutines.flow.combine(debugDoor, sensorDoor) { d, s -> d ?: s }.collect { open ->
+                val decision = ai.chaz.sync.ArrivalAlbumPolicy.decide(
+                    wasOpen = was, isOpen = open, enabled = _autoAlbum.value, driving = driving.restricted.value,
+                    paired = phone.state.value.paired, pending = pendingAlbum().size,
+                    nowMs = System.currentTimeMillis(), lastAutoSendMs = lastAutoAlbumMs,
+                )
+                was = open
+                if (decision != ai.chaz.sync.ArrivalAlbumPolicy.Decision.NO_EDGE) android.util.Log.i("ChazAlbum", "도어 열림 → $decision")
+                if (decision == ai.chaz.sync.ArrivalAlbumPolicy.Decision.SEND) {
+                    lastAutoAlbumMs = System.currentTimeMillis()
+                    sendAlbum(auto = true)
+                }
+            }
+        }
+    }
+
     /** 마지막 완성본을 폰으로. 저장본이 없으면 마지막 세션을 미리보기에서 고른(없으면 L2) 레이아웃으로 만들어 보낸다. */
     suspend fun sendLatestToPhone(): SendOutcome {
         val result = composer.lastSaved.value ?: run {
@@ -265,7 +357,7 @@ class AppGraph(context: Context) {
                 composer.save(session.session.id, layout, composer.render(layout, session.cuts, opts, preview = false), opts)
             }.getOrElse { return SendOutcome.FAILED }
         }
-        return runCatching { phone.deliver(result) }.fold(
+        return runCatching { deliver(result) }.fold(
             onSuccess = {
                 capture.dispatch(AppEvent.SendToPhone)
                 SendOutcome.SENT
@@ -409,6 +501,8 @@ class AppGraph(context: Context) {
                 rebuildCameras()
                 // 기본 안내 문구를 미리 준비 (Pleos 는 모델 로딩, 비즈라우터는 사전 합성)
                 attachLocation()
+                attachDoor()
+                refreshAlbum()
                 updateWakeLoop()
                 phone.refresh()
                 refreshContext()

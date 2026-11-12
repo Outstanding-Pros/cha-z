@@ -70,6 +70,11 @@ class MainActivity : ComponentActivity() {
             "demo" -> graph.setShootMode(ai.chaz.capture.ShootMode.DEMO)
             "live" -> graph.setShootMode(ai.chaz.capture.ShootMode.LIVE)
         }
+        when (intent?.getStringExtra("door")) { // --es door open|close|auto (도착 자동 전송 시연·테스트)
+            "open" -> graph.setDebugDoor(true)
+            "close" -> graph.setDebugDoor(false)
+            "auto" -> graph.setDebugDoor(null)
+        }
         when (intent?.getStringExtra("demo")) {
             "start" -> { graph.spotGuide.resetTrip(); graph.location.startDemo() }
             "stop" -> graph.location.stopDemo()

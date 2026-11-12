@@ -108,6 +108,29 @@ class ResultComposer(
         return r.render(imgs, opts, if (preview) 0.5f else 1f)
     }
 
+    /** sinceMs 이후 저장한 결과물 (오래된 것부터). 여정 앨범 = 오늘 저장한 것. */
+    suspend fun savedSince(sinceMs: Long): List<Result> = withContext(Dispatchers.IO) {
+        File(context.filesDir, "sessions").listFiles().orEmpty()
+            .flatMap { File(it, "results").listFiles { f -> f.extension == "json" }.orEmpty().toList() }
+            .filter { it.lastModified() >= sinceMs }
+            .sortedBy { it.lastModified() }
+            .mapNotNull { f ->
+                runCatching {
+                    val j = JSONObject(f.readText())
+                    val img = File(f.parentFile, j.getString("path"))
+                    if (!img.exists()) return@runCatching null
+                    Result(
+                        id = j.getString("id"),
+                        sessionIds = j.getJSONArray("sessionIds").let { a -> (0 until a.length()).map { a.getString(it) } },
+                        layout = Layout.valueOf(j.getString("layout")),
+                        path = img.absolutePath,
+                        filters = j.optJSONArray("filters")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
+                        sourceKinds = j.optJSONArray("sourceKinds")?.let { a -> (0 until a.length()).mapNotNull { runCatching { SourceKind.valueOf(a.getString(it)) }.getOrNull() }.toSet() }.orEmpty(),
+                    )
+                }.getOrNull()
+            }
+    }
+
     /** 앱 폴더(sessions/{id}/results)와 갤러리(Pictures/Cha-z)에 저장. */
     suspend fun save(sessionId: String, layout: Layout, bitmap: Bitmap, opts: RenderOptions, tags: List<String> = emptyList()): Result = withContext(Dispatchers.IO) {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
@@ -127,7 +150,6 @@ class ResultComposer(
         }
 
         val result = Result(id, listOf(sessionId), layout, file.absolutePath, listOfNotNull(opts.filter.takeIf { it != ColorPreset.ORIGINAL }?.name) + tags, opts.sourceKinds)
-        _lastSaved.value = result
         File(dir, "$id.json").writeText(
             JSONObject()
                 .put("id", id).put("sessionIds", JSONArray(result.sessionIds)).put("layout", layout.name)
@@ -135,6 +157,7 @@ class ResultComposer(
                 .put("sourceKinds", JSONArray(result.sourceKinds.map { it.name })).put("createdOn", result.createdOn)
                 .toString(2),
         )
+        _lastSaved.value = result // json 을 쓴 뒤에 알린다 (앨범 목록이 바로 읽을 수 있게)
         result
     }
 }

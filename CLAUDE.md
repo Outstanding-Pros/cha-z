@@ -39,5 +39,6 @@ adb shell am start --user 10 -n ai.chaz/.MainActivity --es tab SETTINGS   # SPIK
 - 음성 명령 주입(한글은 base64): `adb shell am start --user 10 -f 0x20000000 -n ai.chaz/.MainActivity --es say64 $(printf '%s' '차즈 그만' | base64 -w0)`
 - 주행/정차 강제 전환(개발용 오버라이드): `--es drive on|off|auto` (위와 같은 am start)
 - 촬영 모드: `--es mode demo|live` (시연 = 에뮬레이터 샘플 실내, 실촬영 = 폰 카메라만)
+- 도어(여정 앨범 자동 전송 시험): `--es door open|close|auto` (auto = 실제 Vehicle SDK Door 값). Virtual Console 도어로도 동작
 - 위치: `--es loc 33.46,126.31|off`(수동), `--es demo start|stop`(데모 경로 — 스팟 가이드 시연)
 - 에뮬레이터는 user 빌드라 `cmd car_service inject-vhal-event` 불가 → 기어·속도는 Virtual Console로.

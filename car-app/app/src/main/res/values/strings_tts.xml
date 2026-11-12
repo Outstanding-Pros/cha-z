@@ -14,6 +14,8 @@
     <string name="tts_phone_not_paired">정차 후 화면의 QR로 폰을 연결해 주세요.</string>
     <string name="tts_light_driving">정차 후에 바꿀 수 있어요.</string>
     <string name="tts_light_not_ready">조명 연출은 곧 준비할게요.</string>
+    <string name="tts_album_arrived">도착했어요. 오늘 사진 %1$d장을 폰으로 보냈어요.</string>
+    <string name="tts_album_sent">오늘 사진 %1$d장을 폰으로 보냈어요.</string>
     <string name="tts_sent_phone">완성본을 폰으로 보냈어요.</string>
     <string name="tts_send_failed">폰으로 보내지 못했어요. 서버 연결을 확인해 주세요.</string>
     <string name="tts_no_result">보낼 사진이 아직 없어요. 먼저 찍어 볼까요?</string>

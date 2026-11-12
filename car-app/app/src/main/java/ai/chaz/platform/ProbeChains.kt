@@ -57,6 +57,7 @@ object ProbeChains {
         const val LOC_ANDROID = "android.location-manager"
         const val WEATHER_OPEN_METEO = "open-meteo"
         const val VEHICLE_PLEOS = "pleos.vehicle.state"
+        const val DOOR_PLEOS = "pleos.vehicle.door"
     }
 
     fun build(context: Context, hub: PleosVehicleHub, server: ChazServer): Map<Feature, List<Candidate>> {
@@ -76,6 +77,10 @@ object ProbeChains {
                 Candidate(Ids.DRIVING_CAR_UX, "CarUxRestrictions", Tier.PLATFORM) { CarUxDrivingGate.probe(ctx) },
                 Candidate(Ids.DRIVING_PLEOS_GEAR, "Vehicle SDK 기어", Tier.PLEOS_SDK) { VehicleGearDrivingGate.probe(hub) },
                 Candidate(Ids.DRIVING_DEBUG, "개발용 디버그 토글", Tier.FALLBACK) { ProbeResult.Ok("항상 사용 가능") },
+            ),
+            Feature.DOOR to listOf(
+                Candidate(Ids.DOOR_PLEOS, "Vehicle SDK Door", Tier.PLEOS_SDK) { ai.chaz.platform.vehicle.PleosDoorSensor.probe(hub) },
+                Candidate("fallback.manual-album", "수동 전송만", Tier.FALLBACK) { ProbeResult.Ok("도착 자동 전송 없음 — '지금 앨범 보내기'로 전송") },
             ),
             Feature.VEHICLE_STATE to listOf(
                 Candidate(Ids.VEHICLE_PLEOS, "Vehicle SDK", Tier.PLEOS_SDK) { PleosVehicleHub.probeVehicleState(hub) },
