@@ -25,6 +25,8 @@ class CaptureController(
     private val engine: CaptureSessionEngine,
     private val sources: () -> List<CameraSource>,
     private val isDriving: () -> Boolean,
+    /** 끝난 촬영을 앨범에 저장 (11/12 b: 바로 편집으로 가지 않는다). 실패해도 상태는 대기로. */
+    private val archive: suspend (CaptureSessionEngine.Result) -> Unit = {},
 ) {
     private val _model = MutableStateFlow(AppModel())
     val model: StateFlow<AppModel> = _model.asStateFlow()
@@ -61,8 +63,9 @@ class CaptureController(
                 onShot = { dispatch(AppEvent.ShotTaken(it)) },
             )
             _lastResult.value = result
+            if (result.cuts.isNotEmpty()) runCatching { archive(result) }.onFailure { Log.w(TAG, "앨범 저장 실패: ${it.javaClass.simpleName}") }
             _progress.value = null
-            dispatch(if (result.stopped) AppEvent.Stop else AppEvent.SessionFinished)
+            dispatch(if (result.cuts.isEmpty()) AppEvent.Stop else AppEvent.Archived)
         }
         return true
     }

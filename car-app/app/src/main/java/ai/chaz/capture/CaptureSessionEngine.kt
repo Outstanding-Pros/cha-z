@@ -68,6 +68,7 @@ class CaptureSessionEngine(
         onProgress(Progress(Phase.ANNOUNCING, 0, 0, cfg.count, null))
         speakSafely(
             when {
+                !cfg.video && cfg.count == 1 -> phrases.captureSingle()
                 adjusted -> phrases.captureAdjusted(cfg)
                 isDriving() -> phrases.captureStartDriving(cfg) // 주행 중: '웃어 주세요' 같은 포즈 유도 없이
                 else -> phrases.captureStart(cfg)
@@ -80,7 +81,7 @@ class CaptureSessionEngine(
         val job = launch {
             if (stopRequested) return@launch // 시작 안내 중에 멈춘 경우
             // 클립: 0.5초 간격 스냅샷 시퀀스 (에뮬레이터는 동시 녹화가 안 됨 — SPEC F1)
-            val clipJob = launch {
+            val clipJob = if (!cfg.video) null else launch {
                 var seq = 0
                 while (isActive) {
                     for (s in sources) if (store.saveClipFrame(session, s, seq)) clipFrames[s.role] = clipFrames.getValue(s.role) + 1
@@ -110,8 +111,8 @@ class CaptureSessionEngine(
                 cuts += store.saveCut(session, i, now() - t0, sources)
                 onShot(i)
             }
-            until(t0 + cfg.durationSec * 1000L + 500)
-            clipJob.cancel()
+            if (cfg.video) until(t0 + cfg.durationSec * 1000L + 500)
+            clipJob?.cancel()
             tickJob.cancel()
         }
         loop = job
@@ -122,7 +123,7 @@ class CaptureSessionEngine(
         withContext(NonCancellable) {
             onProgress(Progress(Phase.FINISHING, now() - t0, cuts.size, cfg.count, null))
             val durationMs = now() - t0
-            val clips = sources.map { s ->
+            val clips = if (!cfg.video) emptyList() else sources.map { s ->
                 Clip(session.id, s.role, s.kind, store.clipPath(session, s.role), durationMs, clipFrames.getValue(s.role))
             }
             store.finish(session, cuts, clips, stopped)

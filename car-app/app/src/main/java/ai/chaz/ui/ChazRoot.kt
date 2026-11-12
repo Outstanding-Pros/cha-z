@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class Tab(val label: String, val ready: Boolean, val icon: () -> androidx.compose.ui.graphics.vector.ImageVector) {
-    HOME("촬영", true, { ChazIcons.camera }), GALLERY("갤러리", true, { ChazIcons.gallery }), LIGHT("조명", true, { ChazIcons.light }),
+    HOME("촬영", true, { ChazIcons.camera }), GALLERY("편집", true, { ChazIcons.gallery }), LIGHT("조명", true, { ChazIcons.light }),
     SETTINGS("설정", true, { ChazIcons.settings }), SPIKE("점검", true, { ChazIcons.tools }),
 }
 
@@ -50,6 +50,9 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
     val nextSpot = nearest?.let { "다음 스팟 ${it.spot.name} ${ai.chaz.ui.light.dist(it.distanceM)}" }
     // 결과가 새로 뜨면(차 촬영 끝·폰 직접 셔터) 다른 탭에 있어도 홈(편집)으로
     LaunchedEffect((state as? AppState.Editing)?.sessionId) { if (state is AppState.Editing) tab = Tab.HOME }
+    // 차~즈 촬영이 끝나 앨범에 저장되면, 정차 중이면 편집 탭(방금 찍은 묶음이 칸에 들어간 채)으로
+    val draft by graph.albumDraft.collectAsState()
+    LaunchedEffect(draft, driving.restricted) { if (draft != null && !driving.restricted) tab = Tab.GALLERY }
     val (line1, line2) = when (state) {
         is AppState.Capturing -> "촬영 중 · ${state.session.config.count}컷 중 ${state.shotsTaken}" to "창밖 풍경과 함께 담고 있어요" // 주행 화면: 포즈·시선 유도 문구 없음
         is AppState.Saved -> "저장했어요" to "정차 후 편집하거나 '차즈 스마트폰에서 편집할게'라고 말해 주세요"

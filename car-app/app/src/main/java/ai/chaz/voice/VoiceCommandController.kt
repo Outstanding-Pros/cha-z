@@ -19,6 +19,8 @@ import kotlinx.coroutines.sync.withLock
 interface CommandSink {
     val capturing: Boolean
     val lastConfig: CaptureConfig
+    /** '차즈'만 말했을 때 쓰는 설정 = 대기 화면에서 고른 촬영 방식 (단발·동영상). */
+    val defaultConfig: CaptureConfig get() = CaptureConfig()
     val driving: Boolean
     fun startCapture(trigger: TriggerSource, config: CaptureConfig)
     fun stopCapture()
@@ -180,7 +182,7 @@ class VoiceCommandController(
             return
         }
         when (intent) {
-            Intent.CaptureDefault -> sink.startCapture(trigger, CaptureConfig())
+            Intent.CaptureDefault -> sink.startCapture(trigger, sink.defaultConfig)
             is Intent.CaptureCustom -> sink.startCapture(trigger, fill(intent))
             Intent.Retake -> sink.startCapture(trigger, sink.lastConfig)
             Intent.Stop -> Unit

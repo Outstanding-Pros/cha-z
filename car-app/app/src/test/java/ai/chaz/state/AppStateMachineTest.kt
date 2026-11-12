@@ -15,6 +15,13 @@ class AppStateMachineTest {
     private fun AppModel.on(vararg e: AppEvent) = e.fold(this) { acc, ev -> m.reduce(acc, ev) }
     private val trigger = AppEvent.Trigger(TriggerSource.WAKE_WORD, CaptureConfig())
 
+    @Test fun `차즈 촬영이 끝나 앨범에 저장되면 대기로 (주행 여부 상관없이)`() {
+        assertEquals(AppState.Standby, AppModel().on(trigger, AppEvent.ShotTaken(4), AppEvent.Archived).state)
+        assertEquals(AppState.Standby, AppModel(restricted = true).on(trigger, AppEvent.ShotTaken(1), AppEvent.Archived).state)
+        // 촬영 중이 아니면 무시
+        assertEquals(AppState.Editing("x"), AppModel().on(AppEvent.Imported("x"), AppEvent.Archived).state)
+    }
+
     @Test fun `정차 중 촬영이 끝나면 편집`() {
         val s = AppModel().on(trigger, AppEvent.ShotTaken(4), AppEvent.SessionFinished).state
         assertEquals(AppState.Editing("s1"), s)

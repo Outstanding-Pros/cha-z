@@ -128,13 +128,14 @@ private fun ControlPanel(graph: AppGraph, progress: CaptureSessionEngine.Progres
         Minimap(graph, Modifier.width(240.dp).height(212.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("사진", selected = true) {}
-                Chip("영상 · 준비 중", selected = false, enabled = false) {}
-                Chip("동시 · 준비 중", selected = false, enabled = false) {}
+                val cmode by graph.captureMode.collectAsState()
+                Text("차~즈", color = Tokens.text2, fontSize = Tokens.labelSize, modifier = Modifier.width(72.dp))
+                ai.chaz.data.CaptureMode.entries.forEach { m -> Chip(m.label, selected = cmode == m, enabled = progress == null) { graph.setCaptureMode(m) } }
                 Spacer(Modifier.weight(1f))
-                val cfg = graph.capture.lastConfig
-                Text("촬영 설정", color = Tokens.text2, fontSize = Tokens.labelSize)
-                Text("${cfg.durationSec}초 · ${cfg.count}컷", color = Tokens.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, style = Tokens.tabular)
+                Text(
+                    if (cmode == ai.chaz.data.CaptureMode.SINGLE) "실내·전방·후방 한 장씩" else "12초 영상 + 3초마다 1컷",
+                    color = Tokens.text2, fontSize = Tokens.labelSize,
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("레이아웃", color = Tokens.text2, fontSize = Tokens.labelSize, modifier = Modifier.width(72.dp))
@@ -158,7 +159,7 @@ private fun ControlPanel(graph: AppGraph, progress: CaptureSessionEngine.Progres
         fun cycleFilter(d: Int) { val e = ColorPreset.entries; setFilter(e[(prefs.filter.ordinal + d + e.size) % e.size]) }
         ControlPad(
             capturing = progress != null,
-            onShutter = { if (progress != null) graph.capture.stop() else graph.capture.start(TriggerSource.SHUTTER_BUTTON) },
+            onShutter = { if (progress != null) graph.capture.stop() else graph.capture.start(TriggerSource.SHUTTER_BUTTON, graph.captureMode.value.config) },
             onLeft = { cycleLayout(-1) }, onRight = { cycleLayout(1) },
             onUp = { cycleFilter(-1) }, onDown = { cycleFilter(1) },
         )

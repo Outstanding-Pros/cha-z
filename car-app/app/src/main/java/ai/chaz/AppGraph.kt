@@ -115,8 +115,33 @@ class AppGraph(context: Context) {
 
     private val sessionStore by lazy { FileSessionStore(appContext) }
 
-    /** 폰 직접 촬영 묶음 앨범 (갤러리 탭). */
+    /** 앨범 (편집 탭): 폰 직접 촬영 묶음 + 차~즈 촬영(단발·동영상) 결과. */
     val phoneAlbum by lazy { ai.chaz.sync.PhoneAlbumStore(appContext) }
+
+    /** 차~즈 촬영 방식 (단발 / 동영상). '차즈'·셔터는 이 방식으로 찍는다. */
+    private val _captureMode = MutableStateFlow(
+        runCatching { ai.chaz.data.CaptureMode.valueOf(appContext.getSharedPreferences("chaz", android.content.Context.MODE_PRIVATE).getString("captureMode", null)!!) }
+            .getOrDefault(ai.chaz.data.CaptureMode.VIDEO),
+    )
+    val captureMode: StateFlow<ai.chaz.data.CaptureMode> = _captureMode.asStateFlow()
+    fun setCaptureMode(m: ai.chaz.data.CaptureMode) {
+        if (capture.model.value.state is AppState.Capturing) return
+        appContext.getSharedPreferences("chaz", android.content.Context.MODE_PRIVATE).edit().putString("captureMode", m.name).apply()
+        _captureMode.value = m
+    }
+
+    /** 방금 찍은 촬영을 편집 탭 칸에 미리 넣어 둔 초안. 편집 탭이 열리면 가져가고 비운다. */
+    data class AlbumDraft(val layout: Layout, val bundleIds: List<String>)
+    val albumDraft = MutableStateFlow<AlbumDraft?>(null)
+
+    private suspend fun archiveCapture(result: ai.chaz.capture.CaptureSessionEngine.Result) {
+        val saved = phoneAlbum.saveCapture(result)
+        if (saved.isEmpty()) return
+        val cur = previewPrefs.value.layout?.takeIf { it != Layout.SURROUND_SEQUENCE && composer.available(it) } ?: Layout.CUT_FRAME
+        val (layout, picks) = ai.chaz.sync.PhoneAlbum.draftFor(saved, cur)
+        albumDraft.value = AlbumDraft(layout, picks.map { it.id })
+        android.util.Log.i("ChazAlbum", "촬영 저장: 묶음 ${saved.size}개" + if (result.clips.isNotEmpty()) " + 영상" else "")
+    }
 
     val capture by lazy {
         CaptureController(
@@ -127,6 +152,7 @@ class AppGraph(context: Context) {
             engine = CaptureSessionEngine(speech, cues, sessionStore, phrases),
             sources = { _cameras.value },
             isDriving = { driving.restricted.value },
+            archive = { archiveCapture(it) },
         )
     }
 
@@ -146,6 +172,7 @@ class AppGraph(context: Context) {
             sink = object : CommandSink {
                 override val capturing get() = capture.model.value.state is AppState.Capturing
                 override val lastConfig get() = capture.lastConfig
+                override val defaultConfig get() = _captureMode.value.config
                 override val driving get() = this@AppGraph.driving.restricted.value
                 override fun startCapture(trigger: TriggerSource, config: CaptureConfig) { capture.start(trigger, config) }
                 override fun stopCapture() = capture.stop()
@@ -568,10 +595,11 @@ class AppGraph(context: Context) {
      */
     suspend fun editPhoneBundles(layout: ai.chaz.media.Layout, bundles: List<ai.chaz.sync.PhoneBundle>): Boolean {
         if (capture.model.value.state is AppState.Capturing || bundles.isEmpty()) return false
-        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = bundles.size)).config
-        val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.PHONE_SHUTTER,
+        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = bundles.size, video = false)).config
+        val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.ALBUM,
             spotName = spotGuide.placeForSession())
-        val cuts = runCatching { sessionStore.saveBundles(session, bundles.map { it.photos }) }.getOrNull() ?: return false
+        val frames = bundles.map { b -> b.photos.map { (role, path) -> ai.chaz.data.Frame(role, path, b.sourceOf(role)) } }
+        val cuts = runCatching { sessionStore.saveBundles(session, frames) }.getOrNull() ?: return false
         previewPrefs.value = previewPrefs.value.copy(layout = layout) // 편집 화면이 고른 프레임으로 열리게
         return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, cuts, emptyList(), stopped = false))
     }

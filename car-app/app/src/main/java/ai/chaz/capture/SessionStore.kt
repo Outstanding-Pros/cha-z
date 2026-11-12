@@ -65,18 +65,18 @@ class FileSessionStore(context: Context) : SessionStore {
     }
 
     /**
-     * 폰 앨범 묶음들로 세션을 만든다. 묶음 하나 = 컷 하나(실내·전방·후방 프레임), 넣은 순서대로 1번 컷부터.
-     * 원본은 앨범에 남기고 복사한다. 폰 사진이라 source = PHONE_CAMERA (실내가 폰이면 L1 창문 마스크는 못 쓴다 — ResultComposer).
+     * 앨범 묶음들로 세션을 만든다. 묶음 하나 = 컷 하나(실내·전방·후방 프레임), 넣은 순서대로 1번 컷부터.
+     * 원본은 앨범에 남기고 복사한다. source 는 묶음이 기억한 카메라 종류 그대로 (실내가 폰이면 L1 창문 마스크 불가 — ResultComposer).
      */
-    suspend fun saveBundles(session: Session, bundles: List<Map<CameraRole, String>>): List<Cut> {
+    suspend fun saveBundles(session: Session, bundles: List<List<Frame>>): List<Cut> {
         begin(session)
         val cuts = withContext(Dispatchers.IO) {
-            bundles.mapIndexed { i, photos ->
+            bundles.mapIndexed { i, src ->
                 val index = i + 1
-                val frames = photos.entries.sortedBy { it.key.ordinal }.map { (role, src) ->
-                    val f = File(dir(session), "cuts/%02d_%s.jpg".format(index, role.name.lowercase()))
-                    File(src).copyTo(f, overwrite = true)
-                    Frame(role, f.absolutePath, SourceKind.PHONE_CAMERA)
+                val frames = src.sortedBy { it.role.ordinal }.map { s ->
+                    val f = File(dir(session), "cuts/%02d_%s.jpg".format(index, s.role.name.lowercase()))
+                    File(s.path).copyTo(f, overwrite = true)
+                    Frame(s.role, f.absolutePath, s.source)
                 }
                 Cut(session.id, index, i * 1000L, frames)
             }

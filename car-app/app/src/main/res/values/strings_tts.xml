@@ -5,8 +5,9 @@
     <string name="tts_capture_start">%1$s 동안 %2$d컷 찍을게요. 창밖과 함께 웃어 주세요.</string>
     <string name="tts_capture_start_driving">%1$s 동안 %2$d컷 찍을게요.</string>
     <string name="tts_capture_adjusted">%1$s 동안 %2$d컷으로 맞췄어요.</string>
-    <string name="tts_done_driving">다 찍었어요. 정차하면 편집할 수 있어요.</string>
-    <string name="tts_done_parked">편집 화면으로 갈게요.</string>
+    <string name="tts_done_driving">앨범에 저장했어요. 정차하면 편집할 수 있어요.</string>
+    <string name="tts_done_parked">앨범에 저장했어요. 프레임을 골라 꾸며 보세요.</string>
+    <string name="tts_capture_single">실내, 전방, 후방 한 장씩 찍을게요.</string>
     <string name="tts_stopped">촬영을 멈췄어요.</string>
     <string name="tts_retake">다시 찍을게요.</string>
     <string name="tts_help">"차즈 1분 동안 10번 찍어줘", "차즈 다시 찍어줘", "차즈 그만"처럼 말해 보세요.</string>

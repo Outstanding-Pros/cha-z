@@ -14,6 +14,8 @@ interface TtsPhrases {
     fun doneDriving(): String
     fun doneParked(): String
     fun stopped(): String
+    /** 단발: 실내·전방·후방 한 장씩. */
+    fun captureSingle(): String = "한 장 찍을게요"
 }
 
 class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
@@ -24,6 +26,7 @@ class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
     override fun doneDriving() = res.getString(R.string.tts_done_driving)
     override fun doneParked() = res.getString(R.string.tts_done_parked)
     override fun stopped() = res.getString(R.string.tts_stopped)
+    override fun captureSingle() = res.getString(R.string.tts_capture_single)
     fun albumArrived(n: Int) = res.getString(R.string.tts_album_arrived, n)
     fun albumSent(n: Int) = res.getString(R.string.tts_album_sent, n)
     fun phoneBundle(n: Int) = res.getString(R.string.tts_phone_bundle, n)

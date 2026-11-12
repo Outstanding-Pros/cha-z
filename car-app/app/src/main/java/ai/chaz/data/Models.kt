@@ -3,9 +3,15 @@ package ai.chaz.data
 import ai.chaz.capture.CameraRole
 import ai.chaz.capture.SourceKind
 
-/** 촬영 설정. 간격 = durationSec / count. */
-data class CaptureConfig(val durationSec: Int = 12, val count: Int = 4) {
+/** 촬영 설정. 간격 = durationSec / count. video = 촬영 내내 영상(클립)도 남길지 (단발은 false). */
+data class CaptureConfig(val durationSec: Int = 12, val count: Int = 4, val video: Boolean = true) {
     val intervalMs: Long get() = durationSec * 1000L / count
+}
+
+/** 차~즈 촬영 방식 (11/12 b). 단발 = 실내·전방·후방 한 장씩, 동영상 = 12초 영상 + 3초마다 4컷. */
+enum class CaptureMode(val label: String, val config: CaptureConfig) {
+    SINGLE("단발 · 3장", CaptureConfig(durationSec = 4, count = 1, video = false)),
+    VIDEO("동영상 · 12초 4컷", CaptureConfig(durationSec = 12, count = 4, video = true)),
 }
 
 /** SPEC F1 '촬영 설정 제약'. 범위를 벗어나면 가장 가까운 값으로 맞추고 무엇을 바꿨는지 알려 준다. */
@@ -27,7 +33,7 @@ object CaptureRules {
             duration = (count * 2).coerceIn(MIN_DURATION, MAX_DURATION)
             if (duration * 1000L / count < MIN_INTERVAL_MS) count = duration / 2
         }
-        val c = CaptureConfig(duration, count)
+        val c = CaptureConfig(duration, count, requested.video)
         return Normalized(c, c != requested)
     }
 
@@ -44,7 +50,9 @@ object CaptureRules {
 
 enum class TriggerSource { WAKE_WORD, VOICE_BUTTON, SPOT_GUIDE, APP_LAUNCH, SHUTTER_BUTTON,
     /** 연결된 폰에서 직접 셔터를 눌러 보낸 사진 (차 촬영 세션 없이 1컷 세션으로 들어온다). */
-    PHONE_SHUTTER }
+    PHONE_SHUTTER,
+    /** 편집 탭에서 앨범 묶음을 프레임 칸에 올려 만든 세션. */
+    ALBUM }
 
 enum class SessionStatus { RAW, EDITED, DELIVERED }
 

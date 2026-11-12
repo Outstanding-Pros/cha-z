@@ -107,6 +107,27 @@ class CaptureSessionEngineTest {
         assertEquals(3, store.finished!!.second.size)
     }
 
+    @Test fun `단발 - 세 소스 한 장씩 1컷, 영상 없음`() = runTest {
+        val (engine, store) = setup(introMs = 2_000)
+        val result = engine.run(session(ai.chaz.data.CaptureMode.SINGLE.config), sources, adjusted = false, isDriving = { false })
+
+        assertEquals(1, result.cuts.size)
+        assertEquals(3, result.cuts[0].frames.size)
+        assertEquals(listOf(4_000L), store.cutTimes)
+        assertTrue(store.clipFrames.isEmpty())
+        assertTrue(result.clips.isEmpty())
+        assertEquals(listOf("3300:cd3", "4200:cd2", "5100:cd1", "6000:shutter"), cuesLog)
+        assertEquals("한 장 찍을게요", speechLog.first())
+    }
+
+    @Test fun `동영상 - 12초 영상과 3초마다 4컷`() = runTest {
+        val (engine, store) = setup(introMs = 2_000)
+        val result = engine.run(session(ai.chaz.data.CaptureMode.VIDEO.config), sources, adjusted = false, isDriving = { false })
+        assertEquals(4, result.cuts.size)
+        assertEquals(3, result.clips.size)
+        assertTrue(result.clips.all { it.frameCount in 24..27 })
+    }
+
     @Test fun `주행 중에 시작하면 포즈 유도 없는 안내`() = runTest {
         val (engine) = setup()
         engine.run(session(), sources, adjusted = false, isDriving = { true })

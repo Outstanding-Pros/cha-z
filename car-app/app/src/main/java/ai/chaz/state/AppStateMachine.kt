@@ -19,6 +19,8 @@ sealed interface AppEvent {
     /** > 변경: 컷 카운터 갱신용으로 추가 (SPEC 반영). */
     data class ShotTaken(val shotsTaken: Int) : AppEvent
     data object SessionFinished : AppEvent
+    /** 차 촬영이 끝나 결과를 앨범에 저장함 → 대기로 (편집은 편집 탭에서 프레임을 골라 시작한다, 11/12 b). */
+    data object Archived : AppEvent
     /** 폰 직접 셔터처럼 차 촬영 없이 완성된 세션이 들어옴. 촬영 중에는 무시(호출 쪽이 끝날 때까지 기다린다). */
     data class Imported(val sessionId: String) : AppEvent
     data class DrivingChanged(val restricted: Boolean) : AppEvent // DrivingGate
@@ -56,6 +58,8 @@ class AppStateMachine(private val newSession: (TriggerSource, CaptureConfig) -> 
                 if (s is AppState.Capturing) model.copy(state = s.copy(shotsTaken = event.shotsTaken)) else model
             AppEvent.SessionFinished ->
                 if (s is AppState.Capturing) model.copy(state = finished(s.session.id, model.restricted)) else model
+            AppEvent.Archived ->
+                if (s is AppState.Capturing) model.copy(state = AppState.Standby) else model
             is AppEvent.Imported ->
                 if (s is AppState.Capturing) model else model.copy(state = finished(event.sessionId, model.restricted))
             AppEvent.Stop -> when (s) {

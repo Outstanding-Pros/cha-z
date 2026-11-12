@@ -66,6 +66,10 @@ class MainActivity : ComponentActivity() {
                 v.split(",").takeIf { it.size == 2 }?.let { (a, b) -> ai.chaz.platform.navi.GeoPoint(a.trim().toDouble(), b.trim().toDouble()) },
             )
         }
+        when (intent?.getStringExtra("cmode")) { // --es cmode single|video (차~즈 촬영 방식)
+            "single" -> graph.setCaptureMode(ai.chaz.data.CaptureMode.SINGLE)
+            "video" -> graph.setCaptureMode(ai.chaz.data.CaptureMode.VIDEO)
+        }
         when (intent?.getStringExtra("mode")) { // --es mode demo|live (촬영 모드: 시연/실촬영)
             "demo" -> graph.setShootMode(ai.chaz.capture.ShootMode.DEMO)
             "live" -> graph.setShootMode(ai.chaz.capture.ShootMode.LIVE)

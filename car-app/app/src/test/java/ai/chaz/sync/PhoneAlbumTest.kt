@@ -33,6 +33,31 @@ class PhoneAlbumTest {
         assertEquals(1, PhoneAlbum.nextEmpty(listOf(a, c, d, a), 1))   // 다 찼으면 그대로
     }
 
+    private fun car(id: String, cut: Int, interior: ai.chaz.capture.SourceKind) = b(id).copy(
+        origin = AlbumOrigin.CAR_VIDEO, group = "g", cut = cut,
+        sources = mapOf(CameraRole.INTERIOR to interior, CameraRole.FRONT to ai.chaz.capture.SourceKind.AI_GENERATED, CameraRole.REAR to ai.chaz.capture.SourceKind.AI_GENERATED),
+    )
+
+    @Test fun `오픈카 칸에는 실내를 차량 카메라로 찍은 묶음만`() {
+        val vehicle = car("v", 1, ai.chaz.capture.SourceKind.WEBCAM)
+        val phoneInterior = car("p", 1, ai.chaz.capture.SourceKind.PHONE_CAMERA)
+        assertEquals(true, PhoneAlbum.accepts(Layout.WINDOW_SWAP, vehicle))
+        assertEquals(false, PhoneAlbum.accepts(Layout.WINDOW_SWAP, phoneInterior))
+        assertEquals(false, PhoneAlbum.accepts(Layout.WINDOW_SWAP, a)) // 폰 묶음
+        assertEquals(true, PhoneAlbum.accepts(Layout.CUT_FRAME, a))
+        assertNull(PhoneAlbum.cutsFor(Layout.WINDOW_SWAP, listOf(a)))
+        assertEquals(listOf(vehicle), PhoneAlbum.cutsFor(Layout.WINDOW_SWAP, listOf(vehicle)))
+    }
+
+    @Test fun `방금 찍은 동영상은 네컷 4칸에 컷 순서대로, 단발은 지금 프레임에`() {
+        val cuts = listOf(3, 1, 4, 2).map { car("c$it", it, ai.chaz.capture.SourceKind.WEBCAM) }
+        val (layout, picks) = PhoneAlbum.draftFor(cuts, Layout.ROUTE_OVERLAY)
+        assertEquals(Layout.CUT_FRAME, layout)
+        assertEquals(listOf(1, 2, 3, 4), picks.map { it.cut })
+        val one = car("s", 1, ai.chaz.capture.SourceKind.WEBCAM)
+        assertEquals(Layout.ROUTE_OVERLAY to listOf(one), PhoneAlbum.draftFor(listOf(one), Layout.ROUTE_OVERLAY))
+    }
+
     @Test fun `서버 roles 는 아는 자리만`() {
         assertEquals(listOf(CameraRole.INTERIOR, CameraRole.REAR), PhoneAlbum.parseRoles(listOf("INTERIOR", "LEFT", "x", "REAR", "REAR")))
     }
