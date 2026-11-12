@@ -296,6 +296,52 @@
     try { await openStream(); } catch (e) { toast('카메라를 바꾸지 못했어요'); }
   });
 
+  // ---------- 음성 리모컨 ----------
+  // 폰 브라우저 음성 인식(Web Speech API)으로 글자로 바꿔 서버 → 차량으로 보낸다. 지원 안 되면 빠른 명령 버튼만.
+  async function say(text) {
+    try {
+      const r = await api('/sync/voice', { method: 'POST', body: JSON.stringify({ phoneDeviceId: phoneId, text }) });
+      toast(r.delivered ? `차에 전달했어요 · “${text.replace(/^차즈\s*/, '')}”` : '차량 앱이 꺼져 있어요');
+    } catch (e) {
+      toast('보내지 못했어요: ' + e.message);
+    }
+  }
+  document.querySelectorAll('[data-say]').forEach((b) => b.addEventListener('click', () => say(b.dataset.say)));
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = $('mic');
+  if (!SR) {
+    mic.hidden = true;
+    $('voice-heard').textContent = '이 브라우저는 음성 인식을 지원하지 않아요. 아래 버튼으로 조작하세요.';
+  } else {
+    let rec = null;
+    mic.addEventListener('click', () => {
+      if (rec) { rec.stop(); return; }
+      rec = new SR();
+      rec.lang = 'ko-KR';
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      let finalText = '';
+      mic.classList.add('on');
+      $('voice-heard').textContent = '듣는 중…';
+      rec.onresult = (ev) => {
+        let t = '';
+        for (const r of ev.results) t += r[0].transcript;
+        $('voice-heard').textContent = `“${t}”`;
+        if (ev.results[ev.results.length - 1].isFinal) finalText = t.trim();
+      };
+      rec.onerror = (ev) => {
+        $('voice-heard').textContent = ev.error === 'not-allowed' ? '마이크 권한을 허용해 주세요' : '잘 못 들었어요. 다시 눌러 주세요';
+      };
+      rec.onend = () => {
+        mic.classList.remove('on');
+        rec = null;
+        if (finalText) say(finalText);
+      };
+      try { rec.start(); } catch (e) { mic.classList.remove('on'); rec = null; }
+    });
+  }
+
   // ---------- P1 + 시작 ----------
   async function claim(token) {
     show('p1');

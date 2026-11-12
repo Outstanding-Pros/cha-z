@@ -45,6 +45,54 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
     val state: StateFlow<State> = _state.asStateFlow()
     private var poll: Job? = null
 
+    private var events: Job? = null
+
+    /**
+     * 서버 이벤트(SSE /sync/events?deviceId=차량) 구독. 폰 음성 리모컨(voice.command)·페어링 수락을 받는다.
+     * 끊기면 3초 뒤 다시 붙는다. 문장 내용은 로그에 남기지 않는다.
+     */
+    fun listen(onVoice: suspend (String) -> Unit) {
+        if (events?.isActive == true) return
+        events = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                runCatching {
+                    val conn = ServerHttp.open("$baseUrl/sync/events?deviceId=$carId").apply {
+                        connectTimeout = 5_000; readTimeout = 40_000 // 서버가 15초마다 ping
+                        setRequestProperty("Accept", "text/event-stream")
+                    }
+                    try {
+                        conn.inputStream.bufferedReader(Charsets.UTF_8).use { r ->
+                            var event: String? = null
+                            val data = StringBuilder()
+                            while (isActive) {
+                                val line = r.readLine() ?: break
+                                when {
+                                    line.startsWith("event:") -> event = line.substringAfter(":").trim()
+                                    line.startsWith("data:") -> data.append(line.substringAfter(":").trim())
+                                    line.isEmpty() -> {
+                                        val ev = event; val d = data.toString()
+                                        event = null; data.setLength(0)
+                                        when (ev) {
+                                            "voice.command" -> runCatching { JSONObject(d).getString("text") }.getOrNull()
+                                                ?.takeIf { it.isNotBlank() }?.let { t ->
+                                                    Log.i("ChazPhone", "폰 음성 명령 ${t.length}자")
+                                                    scope.launch { onVoice(t) }
+                                                }
+                                            "pairing.claimed" -> scope.launch { refresh() }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                }.onFailure { Log.w("ChazPhone", "이벤트 연결 끊김: ${it.javaClass.simpleName}") }
+                delay(3_000)
+            }
+        }
+    }
+
     /** 연결 상태 한 번 확인. */
     suspend fun refresh(): State {
         val s = runCatching { http("GET", "/sync/pairing-status?carDeviceId=$carId") }.fold(

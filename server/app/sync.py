@@ -231,6 +231,27 @@ def pairing_status(carDeviceId: str):
     return {"paired": bool(phones), "phones": len(phones)}
 
 
+# ---------- 폰 음성 리모컨 (폰 → 차량 명령) ----------
+
+class VoiceCommand(BaseModel):
+    phoneDeviceId: str = Field(min_length=8, max_length=64)
+    text: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/sync/voice")
+async def voice_command(body: VoiceCommand):
+    """폰에서 말한 문장(폰 브라우저가 글자로 바꾼 것)을 연결된 차량으로 보낸다. 차량은 차 마이크로 들은 것처럼 처리한다.
+    연결(claimed)된 폰만 자기 차량에만 보낼 수 있다. 문장 내용은 로그에 남기지 않는다."""
+    with _db() as con:
+        car = _car_of(con, body.phoneDeviceId)
+    if not car:
+        raise HTTPException(404, "연결된 차량이 없어요")
+    listening = bool(_subscribers.get(car))
+    await publish(car, "voice.command", {"text": body.text.strip()})
+    log.info("voice.command %d자 → 차량 (수신 중=%s)", len(body.text), listening)
+    return {"delivered": listening}
+
+
 # ---------- 완성본 전송 (deliver) ----------
 
 @router.post("/sync/results")

@@ -465,6 +465,8 @@ class AppGraph(context: Context) {
     fun start() {
         reprobe()
         watchPhoneCamera()
+        // 폰 음성 리모컨: 폰에서 말한 문장을 차 마이크로 들은 것처럼 처리 (버튼을 눌렀으니 호출어는 생략)
+        phone.listen { text -> voice.handleText(text, requireWake = false) }
         scope.launch {
             driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
         }

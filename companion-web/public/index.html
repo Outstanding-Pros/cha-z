@@ -36,6 +36,20 @@
 
   <!-- P2 받은 세션·완성본 -->
   <section id="p2" hidden>
+    <!-- 음성 리모컨: 폰에서 말하면 차량 앱이 차 마이크로 들은 것처럼 처리 -->
+    <div class="card voice">
+      <button id="mic" class="mic" aria-label="눌러서 말하기">🎙</button>
+      <div class="voice-body">
+        <h2>말로 조작하기</h2>
+        <p id="voice-heard" class="sub">버튼을 누르고 “찍어줘”, “폰으로 보내줘”처럼 말해 보세요.</p>
+      </div>
+      <div class="row quick">
+        <button data-say="차즈 찍어줘">📸 찍어줘</button>
+        <button data-say="차즈 다시 찍어줘">↺ 다시</button>
+        <button data-say="차즈 그만">■ 그만</button>
+        <button data-say="차즈 폰으로 보내줘">📨 폰으로</button>
+      </div>
+    </div>
     <button id="cam-go" class="primary wide">📷 실내 카메라로 쓰기</button>
     <p class="sub">대시보드에 폰을 세워 두면 차에서 “차즈”라고 할 때 이 폰이 실내 사진을 찍어요.</p>
     <h2 class="section">받은 사진</h2>
