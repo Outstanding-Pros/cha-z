@@ -554,6 +554,7 @@ class AppGraph(context: Context) {
     private suspend fun onPhoneBundle(bundleId: String, roleNames: List<String>) {
         val photos = ai.chaz.sync.PhoneAlbum.parseRoles(roleNames)
             .mapNotNull { r -> phone.fetchBundlePhoto(bundleId, r.name)?.let { r to it } }.toMap()
+        phone.doneBundle(bundleId)
         if (photos.isEmpty()) return
         val saved = runCatching { phoneAlbum.save(newSessionId(), photos) }
             .onFailure { android.util.Log.w("ChazPhone", "폰 묶음 저장 실패: ${it.javaClass.simpleName}") }.getOrNull() ?: return
@@ -562,18 +563,17 @@ class AppGraph(context: Context) {
     }
 
     /**
-     * 갤러리에서 묶음의 사진을 자리마다 골라 편집으로. 정차 중이면 편집 화면, 주행 중이면 저장(편집 잠금) — 상태 머신.
-     * 차가 촬영 중이면 false.
+     * 갤러리에서 프레임(layout)을 정하고 컷 칸마다 넣은 묶음들로 편집으로. 묶음 하나 = 컷 하나.
+     * 정차 중이면 편집 화면(그 프레임으로 열림), 주행 중이면 저장(편집 잠금) — 상태 머신. 차가 촬영 중이면 false.
      */
-    suspend fun editPhoneBundle(bundle: ai.chaz.sync.PhoneBundle, slots: Map<CameraRole, CameraRole?>): Boolean {
-        if (capture.model.value.state is AppState.Capturing) return false
-        val files = ai.chaz.sync.PhoneAlbum.resolve(bundle, slots)
-        if (files.isEmpty()) return false
-        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = 1)).config
+    suspend fun editPhoneBundles(layout: ai.chaz.media.Layout, bundles: List<ai.chaz.sync.PhoneBundle>): Boolean {
+        if (capture.model.value.state is AppState.Capturing || bundles.isEmpty()) return false
+        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = bundles.size)).config
         val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.PHONE_SHUTTER,
             spotName = spotGuide.placeForSession())
-        val cut = runCatching { sessionStore.saveComposite(session, files) }.getOrNull() ?: return false
-        return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, listOf(cut), emptyList(), stopped = false))
+        val cuts = runCatching { sessionStore.saveBundles(session, bundles.map { it.photos }) }.getOrNull() ?: return false
+        previewPrefs.value = previewPrefs.value.copy(layout = layout) // 편집 화면이 고른 프레임으로 열리게
+        return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, cuts, emptyList(), stopped = false))
     }
 
     private fun newSessionId(): String =

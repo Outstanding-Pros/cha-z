@@ -13,7 +13,11 @@ import java.io.File
 /** 폰에서 직접 찍어 한 번에 보낸 묶음 (실내·전방·후방). photos: 찍은 자리 → 파일 경로. */
 data class PhoneBundle(val id: String, val receivedAt: Long, val photos: Map<CameraRole, String>)
 
-/** 묶음에서 "어느 사진을 어느 자리(프레임)에 넣을지". 순수 로직이라 단위 테스트한다. */
+/**
+ * 폰 묶음 = 차량 카메라(실내·전방·후방)가 같은 순간에 찍은 "한 컷"의 대체.
+ * 나중에 실제 차량 카메라가 붙으면 같은 컷 구조(Cut.frames)로 들어오므로 레이아웃·편집 코드는 그대로 쓴다.
+ * 갤러리에서 프레임(레이아웃)을 정하고, 프레임의 컷 칸마다 묶음을 하나씩 넣는다. 순수 로직이라 단위 테스트한다.
+ */
 object PhoneAlbum {
     /** 차~즈 레이아웃이 쓰는 자리. 폰 묶음도 같은 세 자리로 찍는다. */
     val SLOTS = listOf(CameraRole.INTERIOR, CameraRole.FRONT, CameraRole.REAR)
@@ -23,13 +27,17 @@ object PhoneAlbum {
         CameraRole.LEFT -> "좌측"; CameraRole.RIGHT -> "우측"
     }
 
-    /** 기본: 찍은 자리 그대로. 없는 자리는 비운다(null). */
-    fun defaultSlots(bundle: PhoneBundle): Map<CameraRole, CameraRole?> =
-        SLOTS.associateWith { slot -> slot.takeIf { it in bundle.photos } }
+    /** 프레임마다 컷 칸 수. L2 네컷은 4칸(2칸 이상 채우면 만들 수 있음), 나머지는 1칸. */
+    fun cutSlots(layout: ai.chaz.media.Layout): Int = if (layout == ai.chaz.media.Layout.CUT_FRAME) 4 else 1
+    fun minCuts(layout: ai.chaz.media.Layout): Int = if (layout == ai.chaz.media.Layout.CUT_FRAME) 2 else 1
 
-    /** 자리 → 실제 파일. 비운 자리·없는 사진은 뺀다. 같은 사진을 두 자리에 넣어도 된다. */
-    fun resolve(bundle: PhoneBundle, slots: Map<CameraRole, CameraRole?>): Map<CameraRole, String> =
-        slots.mapNotNull { (slot, photo) -> photo?.let { bundle.photos[it] }?.let { slot to it } }.toMap()
+    /** 칸(빈 칸은 null) → 채운 묶음만 순서대로. 프레임 칸 수를 넘는 것은 버린다. 만들 수 없으면 null. */
+    fun cutsFor(layout: ai.chaz.media.Layout, slots: List<PhoneBundle?>): List<PhoneBundle>? =
+        slots.take(cutSlots(layout)).filterNotNull().takeIf { it.size >= minCuts(layout) }
+
+    /** 묶음을 넣고 다음 빈 칸 위치. 다 찼으면 마지막 칸에 머문다. */
+    fun nextEmpty(slots: List<PhoneBundle?>, from: Int): Int =
+        (slots.indices.drop(from + 1) + slots.indices.take(from + 1)).firstOrNull { slots[it] == null } ?: from
 
     /** 서버 이벤트의 roles 문자열 → 아는 자리만. */
     fun parseRoles(names: List<String>): List<CameraRole> =

@@ -50,8 +50,8 @@
         <button data-say="차즈 폰으로 보내줘">📨 폰으로</button>
       </div>
     </div>
-    <button id="cam-go" class="primary wide">📷 실내 카메라로 쓰기</button>
-    <p class="sub">대시보드에 폰을 세워 두면 차에서 “차즈”라고 할 때 이 폰이 실내 사진을 찍어요.</p>
+    <button id="cam-go" class="primary wide">📷 차~즈 카메라 (3장 찍어 보내기)</button>
+    <p class="sub">실내 → 전방 → 후방 3장을 찍어 한 번에 차로 보내요. 차 화면 갤러리에 한 묶음으로 저장돼요.</p>
     <h2 class="section">받은 사진</h2>
     <p id="empty" class="sub">아직 받은 사진이 없어요. 차에서 “차즈 폰으로 보내줘”라고 말해 보세요.</p>
     <div id="grid" class="grid"></div>
@@ -65,7 +65,7 @@
       <div id="cam-badge" class="pill">카메라 준비 중…</div>
       <div id="cam-count"></div>
     </div>
-    <p id="cam-text" class="sub">폰을 대시보드에 세워 실내가 보이게 놓아 주세요. 화면은 꺼지지 않아요.</p>
+    <p id="cam-text" class="sub">찍은 사진만 차로 보내요 (실시간 화면은 보내지 않아요).</p>
     <!-- 직접 촬영 묶음: 실내 → 전방 → 후방 3장을 모아 한 번에 차로 (차 갤러리에 앨범으로 저장) -->
     <div class="trio" id="trio">
       <button class="slot" data-role="INTERIOR"><img alt=""><span>1 실내</span></button>
@@ -79,6 +79,7 @@
     </div>
     <div class="row">
       <button id="cam-flip">전면/후면 전환</button>
+      <button id="cam-live" class="ghost">실시간 연결 켜기</button>
       <button id="cam-stop" class="ghost">카메라 모드 끝내기</button>
     </div>
   </section>

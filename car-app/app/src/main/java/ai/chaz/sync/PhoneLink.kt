@@ -99,19 +99,36 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
         }
     }
 
-    /** 폰 묶음의 사진 한 장(JPEG). 서버는 가져가면 지운다. 없거나 실패하면 null. */
+    /** 폰 묶음의 사진 한 장(JPEG). 끊기면 3번까지 다시 받는다(서버는 다 받았다고 알릴 때까지 남겨 둔다). 실패하면 null. */
     suspend fun fetchBundlePhoto(bundleId: String, role: String): ByteArray? = withContext(Dispatchers.IO) {
+        repeat(3) { attempt ->
+            val r = runCatching {
+                val conn = ServerHttp.open("$baseUrl/sync/camera/bundle/$bundleId/$role?carDeviceId=$carId").apply {
+                    connectTimeout = 3_000; readTimeout = 15_000
+                }
+                try {
+                    if (conn.responseCode == 404) return@withContext null // 없거나 만료 — 다시 해도 소용없음
+                    if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
+                    conn.inputStream.use { it.readBytes() }
+                } finally {
+                    conn.disconnect()
+                }
+            }
+            r.getOrNull()?.let { return@withContext it }
+            Log.w(TAG, "폰 사진 받기 실패(${attempt + 1}/3): ${r.exceptionOrNull()?.javaClass?.simpleName}")
+            delay(1_000)
+        }
+        null
+    }
+
+    /** 묶음을 다 받았으니 서버에서 지운다 (실패해도 서버가 2분 뒤 정리). */
+    suspend fun doneBundle(bundleId: String) = withContext(Dispatchers.IO) {
         runCatching {
-            val conn = ServerHttp.open("$baseUrl/sync/camera/bundle/$bundleId/$role?carDeviceId=$carId").apply {
-                connectTimeout = 3_000; readTimeout = 10_000
+            val conn = ServerHttp.open("$baseUrl/sync/camera/bundle/$bundleId?carDeviceId=$carId").apply {
+                requestMethod = "DELETE"; connectTimeout = 3_000; readTimeout = 5_000
             }
-            try {
-                if (conn.responseCode != 200) error("HTTP ${conn.responseCode}")
-                conn.inputStream.use { it.readBytes() }
-            } finally {
-                conn.disconnect()
-            }
-        }.onFailure { Log.w(TAG, "폰 사진 받기 실패: ${it.message}") }.getOrNull()
+            try { conn.responseCode } finally { conn.disconnect() }
+        }
     }
 
     /** 연결 상태 한 번 확인. */
@@ -138,6 +155,8 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
                     ticket = Ticket(j.getString("token"), j.getString("url"), (j.getDouble("expiresAt") * 1000).toLong()),
                 )
                 true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e // 'QR 닫기'로 멈춘 것 — 실패가 아니다
             } catch (e: Exception) {
                 Log.w(TAG, "페어링 토큰 실패: ${e.message}")
                 _state.value = _state.value.copy(reachable = false)

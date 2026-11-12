@@ -148,7 +148,7 @@
   // ---------- P5 실내 카메라 모드 ----------
   // 영상 스트림을 켜 두고, 차량이 capture.shot 을 보내면 그 순간 프레임을 떠서 올린다(지연 0.1초 안팎).
   // 0.5초마다 저해상 프레임도 올린다 → 차량 미리보기·클립, 그리고 '카메라 켜짐' 판정.
-  const cam = { stream: null, facing: 'user', timer: null, busy: false, wake: null, shots: 0, offset: 0, syncTimer: null };
+  const cam = { stream: null, facing: 'user', timer: null, busy: false, wake: null, shots: 0, offset: 0, syncTimer: null, live: false };
 
   // 서버 시계 맞추기: 서버시각 - 내시각. 왕복이 가장 짧았던 측정을 쓴다 (오차 ≈ 왕복/2).
   async function syncClock() {
@@ -176,9 +176,14 @@
     if (cam.stream) cam.stream.getTracks().forEach((t) => t.stop());
     cam.stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: cam.facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      // 16:9 로 고정하면 4:3 센서에서 위아래가 잘려 확대돼 보인다 → 센서 원래 비율(보통 4:3)을 우선
+      video: { facingMode: cam.facing, width: { ideal: 2560 }, aspectRatio: { ideal: 4 / 3 } },
     });
     video.srcObject = cam.stream;
+    // 미리보기 칸도 실제 찍히는 비율로 (잘린 미리보기로 착각하지 않게)
+    video.onloadedmetadata = () => {
+      if (video.videoWidth && video.videoHeight) video.parentElement.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+    };
     video.classList.toggle('mirror', cam.facing === 'user'); // 화면만 거울처럼, 올리는 사진은 원본 방향
     await video.play().catch(() => {});
   }
@@ -186,7 +191,7 @@
   function grab(maxW, quality) {
     const w0 = video.videoWidth, h0 = video.videoHeight;
     if (!w0 || !h0) return Promise.resolve(null);
-    const k = Math.min(1, maxW / w0);
+    const k = Math.min(1, maxW / Math.max(w0, h0)); // 긴 변 기준으로 줄인다 (세로로 들어도 같은 화질)
     const c = document.createElement('canvas');
     c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
@@ -210,7 +215,7 @@
   }
 
   async function sendPreview() {
-    if (cam.busy || !cam.stream) return;
+    if (cam.busy || !cam.stream || !cam.live) return;
     cam.busy = true;
     try {
       const b = await grab(480, 0.6);
@@ -223,7 +228,7 @@
   }
 
   async function onShot(d) {
-    if (!cam.stream) return;
+    if (!cam.stream || !cam.live) return; // 실시간 연결을 켰을 때만 차의 '차즈' 촬영에 응한다
     // 예약 촬영(atMs): 서버 시계 기준 그 순간까지 기다렸다가 찍는다. 이미 지났으면 바로.
     if (d.atMs) {
       const wait = d.atMs - serverNow();
@@ -288,10 +293,32 @@
     trioGo(0);
   }
 
+  // 사진 한 장을 '찍힌 프레임 그대로' 얻는다: 되는 기기는 카메라 사진 촬영(ImageCapture.takePhoto — 카메라 앱과 같은 전체 프레임),
+  // 안 되면 화면 영상의 한 장면. 자르지 않고 긴 변 2560px 까지만 줄인다. 방향(EXIF)은 그림에 반영해 둔다.
+  async function takeStill() {
+    const track = cam.stream && cam.stream.getVideoTracks()[0];
+    if (track && 'ImageCapture' in window) {
+      try {
+        const raw = await new ImageCapture(track).takePhoto();
+        const bmp = await createImageBitmap(raw, { imageOrientation: 'from-image' });
+        const k = Math.min(1, 2560 / Math.max(bmp.width, bmp.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        bmp.close();
+        const out = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+        if (out) return out;
+      } catch (e) { /* 지원 안 하는 기기·카메라 → 화면 프레임 */ }
+    }
+    return grab(2560, 0.92);
+  }
+
   async function trioShot() {
     const role = ROLES[trio.step];
     if (!cam.stream || !role || trio.busy) return;
-    const b = await grab(1920, 0.92);
+    trio.busy = true; trioRender();
+    let b = null;
+    try { b = await takeStill(); } finally { trio.busy = false; trioRender(); }
     if (!b) { toast('카메라가 아직 준비 중이에요'); return; }
     $('cam-flash').classList.add('on');
     setTimeout(() => $('cam-flash').classList.remove('on'), 60);
@@ -356,18 +383,31 @@
     }
     listen();
     keepAwake();
-    syncClock();
-    clearInterval(cam.syncTimer);
-    cam.syncTimer = setInterval(syncClock, 60000);
-    clearInterval(cam.timer);
-    cam.timer = setInterval(sendPreview, 500);
-    sendPreview();
+    setLive(false); // 기본은 사진 모드: 찍은 사진만 보낸다
+  }
+
+  // 실시간 연결(선택): 0.5초마다 저해상 화면을 올려 차가 이 폰을 실내 카메라로 쓰게 한다
+  // (차에서 '차즈'라고 하면 이 폰이 찍음, T11). 끄면 아무것도 보내지 않는다.
+  function setLive(on) {
+    cam.live = on;
+    clearInterval(cam.timer); cam.timer = null;
+    clearInterval(cam.syncTimer); cam.syncTimer = null;
+    if (on) {
+      syncClock();
+      cam.syncTimer = setInterval(syncClock, 60000);
+      cam.timer = setInterval(sendPreview, 500);
+      sendPreview();
+    } else {
+      camBadge('사진 모드 · 찍은 사진만 보내요', true);
+    }
+    $('cam-live').textContent = on ? '실시간 연결 끄기' : '실시간 연결 켜기';
+    $('cam-text').textContent = on
+      ? '실시간 연결 중: 차가 이 화면을 실내 카메라로 써요. 차에서 “차즈”라고 하면 이 폰이 찍어요.'
+      : '찍은 사진만 차로 보내요 (실시간 화면은 보내지 않아요).';
   }
 
   function camStop() {
-    clearInterval(cam.timer);
-    clearInterval(cam.syncTimer);
-    cam.timer = null;
+    setLive(false);
     if (cam.stream) cam.stream.getTracks().forEach((t) => t.stop());
     cam.stream = null;
     video.srcObject = null;
@@ -378,6 +418,7 @@
 
   $('cam-go').addEventListener('click', camStart);
   $('cam-stop').addEventListener('click', camStop);
+  $('cam-live').addEventListener('click', () => setLive(!cam.live));
   $('cam-shutter').addEventListener('click', trioShot);
   $('cam-flip').addEventListener('click', async () => {
     cam.facing = cam.facing === 'user' ? 'environment' : 'user';

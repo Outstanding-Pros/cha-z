@@ -12,7 +12,8 @@
 | 차량 | POST /sync/camera/shot            | 즉시 촬영 (예약 실패 시 대체): capture.shot → 업로드 → 그 JPEG 를 응답으로 |
 | 폰   | POST /sync/camera/frame (shot)    | shotId 에 해당하는 고해상 프레임                          |
 | 폰   | POST /sync/camera/bundle          | 폰에서 직접 찍은 실내·전방·후방 묶음 → 차량에 phone.bundle 이벤트 |
-| 차량 | GET  /sync/camera/bundle/{id}/{role} | 묶음의 사진 한 장 (가져가면 지움, 묶음은 2분 보관)     |
+| 차량 | GET  /sync/camera/bundle/{id}/{role} | 묶음의 사진 한 장 (실패하면 다시 받을 수 있게 남겨 둠)  |
+| 차량 | DELETE /sync/camera/bundle/{id}   | 다 받았으니 지움 (안 와도 2분 뒤 자동 삭제)              |
 | 둘다 | GET  /sync/time                   | 서버 시각(ms) — 차량·폰이 서버 시계에 맞춰 예약 시각을 지킨다 |
 
 예약 촬영이 필요한 이유: Cloudflare 를 거치면 이벤트가 폰에 닿기까지 0.3~1.8초. 셔터 순간에 '찍어'를 보내면
@@ -156,10 +157,16 @@ def camera_bundle_photo(bundle_id: str, role: str, carDeviceId: str):
     entry = _bundles.get(bundle_id)
     if not entry or entry[0] != carDeviceId or role not in entry[1]:
         raise HTTPException(404, "없는 사진이에요")
-    data = entry[1].pop(role)
-    if not entry[1]:
+    # 바로 지우지 않는다: 전송 중 끊기면 차가 다시 받을 수 있게. 차가 다 받으면 DELETE, 아니면 2분 뒤 정리.
+    return Response(entry[1][role], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.delete("/sync/camera/bundle/{bundle_id}")
+def camera_bundle_done(bundle_id: str, carDeviceId: str):
+    entry = _bundles.get(bundle_id)
+    if entry and entry[0] == carDeviceId:
         _bundles.pop(bundle_id, None)
-    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return {"ok": True}
 
 
 @router.get("/sync/camera/status")
