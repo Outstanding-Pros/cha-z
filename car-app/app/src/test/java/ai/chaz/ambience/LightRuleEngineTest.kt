@@ -57,6 +57,16 @@ class LightRuleEngineTest {
         assertEquals(plan.color, reds.last().color)
     }
 
+    @Test fun `디렉터 - 주행 중 자동 변경을 끄면 주행 중엔 바꾸지 않고 정차 중엔 바꾼다`() = runTest {
+        val light = SimulatedAmbientLight()
+        var driving = true
+        val d = AmbienceDirector({ light }, { ctx(s = SceneType.COAST) }, driving = { driving }, autoWhileDriving = { false })
+        assertNull(d.begin("spot"))
+        assertEquals(0, light.applied.size)
+        driving = false
+        assertEquals(LightPreset.OCEAN, d.begin("session"))
+    }
+
     @Test fun `디렉터 - 에피소드 시작에 한 번 적용, 끝나면 복원`() = runTest {
         val light = SimulatedAmbientLight()
         val d = AmbienceDirector({ light }, { ctx(s = SceneType.COAST) }, driving = { true })

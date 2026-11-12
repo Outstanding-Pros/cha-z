@@ -87,7 +87,17 @@ fun LightScreen(graph: AppGraph) {
                     }
                     Chip("원래대로", selected = false) { scope.launch { graph.ambience.end() } }
                 }
-                Text("주행 중에는 촬영 세션(또는 스팟 가이드) 시작 때 한 번만, 3초 이상 천천히, 지금보다 밝지 않게 바뀌고 끝나면 돌아와요.", color = Tokens.text2, fontSize = 13.sp)
+                val autoDrive by graph.autoLightDriving.collectAsState()
+                Text("주행 중 자동 변경", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("끔 · 정차해서 찍을 때만", selected = !autoDrive) { graph.setAutoLightDriving(false) }
+                    Chip("켬 · 스팟 예고 때도", selected = autoDrive) { graph.setAutoLightDriving(true) }
+                }
+                Text(
+                    if (autoDrive) "주행 중에도 스팟 예고·촬영 시작 때 한 번, 3초 이상 천천히, 지금보다 밝지 않게 바뀌고 끝나면 돌아와요."
+                    else "주행 중에는 조명을 바꾸지 않아요. 정차해서 찍을 때 맥락에 맞게 바뀌고 끝나면 돌아와요. 손으로 바꾸기도 정차 중에만 돼요.",
+                    color = Tokens.text2, fontSize = 14.sp,
+                )
             }
         }
         item {

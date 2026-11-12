@@ -213,7 +213,19 @@ class AppGraph(context: Context) {
     private val pleosLight by lazy { PleosAmbientLight(vehicleHub) }
     val ambientLight: AmbientLightController
         get() = if (availability.selectedId(Feature.AMBIENT_LIGHT) == ProbeChains.Ids.LIGHT_PLEOS) pleosLight else simulatedLight
-    val ambience = AmbienceDirector(light = { ambientLight }, context = { refreshContext() }, driving = { driving.restricted.value })
+    /** 설정: 주행 중 조명 자동 변경 (기본 끔 = 정차해서 찍을 때만 바뀜). 11/12 팀 논의용으로 둘 다 둔다. */
+    private val _autoLightDriving = MutableStateFlow(
+        appContext.getSharedPreferences("chaz", android.content.Context.MODE_PRIVATE).getBoolean("autoLightDriving", false),
+    )
+    val autoLightDriving: StateFlow<Boolean> = _autoLightDriving.asStateFlow()
+    fun setAutoLightDriving(on: Boolean) {
+        appContext.getSharedPreferences("chaz", android.content.Context.MODE_PRIVATE).edit().putBoolean("autoLightDriving", on).apply()
+        _autoLightDriving.value = on
+    }
+    val ambience = AmbienceDirector(
+        light = { ambientLight }, context = { refreshContext() }, driving = { driving.restricted.value },
+        autoWhileDriving = { _autoLightDriving.value },
+    )
 
     val spotGuide: SpotGuideRunner by lazy {
         SpotGuideRunner(scope, location, spotRepo, SpotGuidePolicy(), sunsetMs = { refreshContext().sunsetMs }, onGuide = { onSpotGuide(it) })

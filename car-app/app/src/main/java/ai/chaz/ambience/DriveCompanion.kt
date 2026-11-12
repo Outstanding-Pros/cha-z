@@ -27,6 +27,11 @@ class AmbienceDirector(
     private val light: () -> AmbientLightController,
     private val context: suspend () -> CaptureContext,
     private val driving: () -> Boolean,
+    /**
+     * 주행 중 자동 변경 허용 (설정). false 면 주행 중엔 그대로 두고 정차 중 에피소드(촬영)에서만 바꾼다
+     * — 기획서 '주행 중 조명 제어 금지'. true 면 기존 SPEC F3(밝기는 지금 이하, 3초 이상 페이드).
+     */
+    private val autoWhileDriving: () -> Boolean = { true },
 ) {
     private val lock = Mutex()
     private var saved: LightLevel? = null
@@ -36,6 +41,7 @@ class AmbienceDirector(
 
     suspend fun begin(reason: String): LightPreset? = lock.withLock {
         if (active) return@withLock _preset.value
+        if (driving() && !autoWhileDriving()) return@withLock null
         val ctx = context()
         val preset = LightRuleEngine.choose(ctx, parked = !driving()) ?: return@withLock null
         applyLocked(preset, reason)
