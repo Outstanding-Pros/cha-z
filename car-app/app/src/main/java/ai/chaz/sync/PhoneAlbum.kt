@@ -34,25 +34,30 @@ data class PhoneBundle(
     val interiorByPhone: Boolean get() = photos.containsKey(CameraRole.INTERIOR) && sourceOf(CameraRole.INTERIOR) == SourceKind.PHONE_CAMERA
 }
 
-/**
- * 네컷 칸 하나에 넣을 사진 조합. 한 자리는 그 사진 그대로, 두 자리(실내+전방/후방)는 AI 로 섞는다(서버 /frames/mix).
- */
-enum class CutRecipe(val label: String, val roles: List<CameraRole>) {
-    INTERIOR("실내", listOf(CameraRole.INTERIOR)),
-    FRONT("전방", listOf(CameraRole.FRONT)),
-    REAR("후방", listOf(CameraRole.REAR)),
-    INTERIOR_FRONT("실내+전방", listOf(CameraRole.INTERIOR, CameraRole.FRONT)),
-    INTERIOR_REAR("실내+후방", listOf(CameraRole.INTERIOR, CameraRole.REAR)),
-    ;
-    val ai: Boolean get() = roles.size > 1
-    /** 묶음에 필요한 사진이 다 있나. */
-    fun fits(b: PhoneBundle): Boolean = roles.all { b.photos.containsKey(it) }
-    /** AI 로 섞을 때 배경이 되는 바깥 자리. */
-    val view: CameraRole? get() = roles.getOrNull(1)
+/** 앨범 '만들기'로 묶음에서 만든 사진 한 장 (앨범의 독립 아이템). source = 만든 묶음 id(지워졌을 수 있음). */
+data class MadePhoto(val id: String, val at: Long, val path: String, val toolId: String, val label: String, val ai: Boolean, val sourceId: String?)
 
-    companion object {
-        /** 묶음을 칸에 처음 넣을 때: AI 없이 쓸 수 있는 첫 조합(보통 실내). 비용이 드는 AI 조합은 사용자가 직접 고른다. */
-        fun default(b: PhoneBundle): CutRecipe = entries.firstOrNull { !it.ai && it.fits(b) } ?: INTERIOR
+/**
+ * 프레임 칸 하나에 넣는 앨범 아이템 = 사진 한 장. 묶음의 실내·전방·후방 중 한 장, 또는 만든 사진.
+ */
+sealed interface AlbumPick {
+    val key: String
+    val path: String
+    val ai: Boolean
+    val label: String
+
+    data class Photo(val bundle: PhoneBundle, val role: CameraRole) : AlbumPick {
+        override val key get() = "${bundle.id}/${role.name}"
+        override val path get() = bundle.photos[role] ?: ""
+        override val ai get() = false
+        override val label get() = PhoneAlbum.label(role)
+    }
+
+    data class Made(val photo: MadePhoto) : AlbumPick {
+        override val key get() = photo.id
+        override val path get() = photo.path
+        override val ai get() = photo.ai
+        override val label get() = photo.label
     }
 }
 
@@ -87,12 +92,15 @@ object PhoneAlbum {
         return layout to sorted.take(cutSlots(layout))
     }
 
+    /** 묶음을 네컷 칸에 한 장으로 넣을 때 기본 사진: 실내(없으면 전방, 후방). */
+    fun firstPhoto(b: PhoneBundle): AlbumPick.Photo? = SLOTS.firstOrNull { b.photos.containsKey(it) }?.let { AlbumPick.Photo(b, it) }
+
     /** 칸(빈 칸은 null) → 채운 묶음만 순서대로. 프레임 칸 수를 넘는 것은 버린다. 만들 수 없으면 null. */
     fun cutsFor(layout: Layout, slots: List<PhoneBundle?>): List<PhoneBundle>? =
         slots.take(cutSlots(layout)).filterNotNull().takeIf { it.size >= minCuts(layout) && it.all { b -> accepts(layout, b) } }
 
     /** 묶음을 넣고 다음 빈 칸 위치. 다 찼으면 마지막 칸에 머문다. */
-    fun nextEmpty(slots: List<PhoneBundle?>, from: Int): Int =
+    fun <T> nextEmpty(slots: List<T?>, from: Int): Int =
         (slots.indices.drop(from + 1) + slots.indices.take(from + 1)).firstOrNull { slots[it] == null } ?: from
 
     /** 서버 이벤트의 roles 문자열 → 아는 자리만. */
@@ -111,11 +119,14 @@ class PhoneAlbumStore(context: Context) {
     val bundles: StateFlow<List<PhoneBundle>> = _bundles.asStateFlow()
     private val _videos = MutableStateFlow<List<AlbumVideo>>(emptyList())
     val videos: StateFlow<List<AlbumVideo>> = _videos.asStateFlow()
+    private val _made = MutableStateFlow<List<MadePhoto>>(emptyList())
+    val made: StateFlow<List<MadePhoto>> = _made.asStateFlow()
 
     suspend fun load() = withContext(Dispatchers.IO) {
         val dirs = root.listFiles() ?: emptyArray()
         _bundles.value = dirs.mapNotNull(::read).sortedWith(ORDER)
         _videos.value = dirs.mapNotNull(::readVideo).sortedByDescending { it.at }
+        _made.value = dirs.mapNotNull(::readMade).sortedByDescending { it.at }
     }
 
     /** 폰에서 받은 묶음 (사진 바이트). */
@@ -160,13 +171,28 @@ class PhoneAlbumStore(context: Context) {
         saved
     }
 
-    /** AI 조합 결과 파일 (묶음 폴더 안, 묶음을 지우면 같이 지워진다). */
-    fun mixFile(b: PhoneBundle, r: CutRecipe): File = File(File(root, b.id), "mix_${r.name.lowercase()}.jpg")
+    /** 앨범 '만들기' 결과 = 앨범의 새 아이템. 폴더 {source}_m_{tool}/made.jpg + made.json. */
+    fun madeId(source: PhoneBundle, toolId: String) = "${source.id}_m_$toolId"
+    fun made(source: PhoneBundle, toolId: String): MadePhoto? = _made.value.firstOrNull { it.id == madeId(source, toolId) }
+
+    suspend fun saveMade(source: PhoneBundle, tool: AlbumTool, img: android.graphics.Bitmap): MadePhoto = withContext(Dispatchers.IO) {
+        val id = madeId(source, tool.id)
+        val dir = File(root, id).apply { mkdirs() }
+        val f = File(dir, "made.jpg")
+        f.outputStream().use { img.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
+        val m = MadePhoto(id, System.currentTimeMillis(), f.absolutePath, tool.id, tool.label, tool.ai, source.id)
+        File(dir, "made.json").writeText(
+            JSONObject().put("id", id).put("at", m.at).put("tool", m.toolId).put("label", m.label).put("ai", m.ai).put("source", source.id).toString(),
+        )
+        _made.value = (listOf(m) + _made.value.filter { it.id != id }).sortedByDescending { it.at }
+        m
+    }
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         File(root, id).deleteRecursively()
         _bundles.value = _bundles.value.filter { it.id != id }
         _videos.value = _videos.value.filter { it.id != id }
+        _made.value = _made.value.filter { it.id != id }
     }
 
     private fun file(role: CameraRole) = role.name.lowercase() + ".jpg"
@@ -205,6 +231,13 @@ class PhoneAlbumStore(context: Context) {
         val roles = PhoneAlbum.parseRoles((0 until j.getJSONArray("roles").length()).map { j.getJSONArray("roles").getString(it) })
         val clips = roles.associateWith { File(dir, it.name.lowercase()) }.filterValues { it.isDirectory }.mapValues { it.value.absolutePath }
         AlbumVideo(j.getString("id"), j.getString("group"), j.getLong("at"), j.getLong("durationMs"), clips, j.getInt("frameCount")).takeIf { clips.isNotEmpty() }
+    }.getOrNull()
+
+    private fun readMade(dir: File): MadePhoto? = runCatching {
+        val j = JSONObject(File(dir, "made.json").readText())
+        val f = File(dir, "made.jpg").takeIf { it.exists() } ?: return@runCatching null
+        MadePhoto(j.getString("id"), j.getLong("at"), f.absolutePath, j.getString("tool"), j.getString("label"), j.optBoolean("ai"),
+            j.optString("source").takeIf { it.isNotBlank() })
     }.getOrNull()
 
     companion object {

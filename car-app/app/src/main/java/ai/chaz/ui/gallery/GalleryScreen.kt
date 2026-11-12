@@ -4,7 +4,8 @@ import ai.chaz.AppGraph
 import ai.chaz.media.Layout
 import ai.chaz.sync.AlbumOrigin
 import ai.chaz.sync.AlbumVideo
-import ai.chaz.sync.CutRecipe
+import ai.chaz.sync.AlbumPick
+import ai.chaz.sync.MadePhoto
 import ai.chaz.capture.CameraRole
 import ai.chaz.sync.PhoneAlbum
 import ai.chaz.sync.PhoneBundle
@@ -60,10 +61,10 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 편집 탭 — ① 프레임 먼저 고르기 → ② 그 프레임에 맞는 칸 구성(왼쪽 앨범에서 묶음을 칸에 올림) → '만들기' → 편집 화면.
- * 묶음 하나 = 차량 카메라(실내·전방·후방)가 같은 순간 찍은 한 컷.
- * L2 네컷은 칸마다 조합(실내·전방·후방 한 장 / 실내+전방·실내+후방 AI 조합)을 고른다. L1·L3 은 묶음 1개.
- * 방금 찍은 촬영(AppGraph.albumDraft)은 프레임을 고르면 칸에 들어간다. 주행 중에는 DrivingLockOverlay 가 덮는다.
+ * 편집 탭 — ① 프레임 먼저 고르기 → ② 그 프레임 전용 칸 구성(왼쪽 앨범에서 아이템을 칸에 올림) → '만들기' → 편집 화면.
+ * L2 네컷: 칸마다 앨범 사진 한 장(묶음의 실내·전방·후방 중 한 장, 또는 앨범에서 만든 사진). L1·L3: 묶음 1개.
+ * 앨범 보기·지우기·'만들기'(AI 합치기 등)는 앨범 탭(AlbumScreen). 방금 찍은 촬영(AppGraph.albumDraft)은 프레임을 고르면 칸에 들어간다.
+ * 주행 중에는 DrivingLockOverlay 가 덮는다.
  */
 @Composable
 fun GalleryScreen(graph: AppGraph) {
@@ -72,7 +73,8 @@ fun GalleryScreen(graph: AppGraph) {
     var frame by remember { mutableStateOf<Layout?>(null) }
     val f = frame
     if (f == null) FramePicker(graph, layouts) { frame = it }
-    else FrameBuilder(graph, f, onBack = { frame = null })
+    else if (f == Layout.CUT_FRAME) FourCutBuilder(graph, onBack = { frame = null })
+    else BundleFrameBuilder(graph, f, onBack = { frame = null })
 }
 
 private fun frameTitle(l: Layout): String = when (l) {
@@ -80,7 +82,7 @@ private fun frameTitle(l: Layout): String = when (l) {
 }
 
 private fun frameDesc(l: Layout): String = when (l) {
-    Layout.CUT_FRAME -> "4칸 필름. 칸마다 실내·전방·후방 사진을 하나씩 넣거나, ✨ AI로 실내+전방·실내+후방을 섞어 넣어요. (2~4컷)"
+    Layout.CUT_FRAME -> "4칸 필름. 칸마다 앨범 사진을 한 장씩 — 묶음의 실내·전방·후방, 또는 앨범에서 만든 사진(✨ 사람+풍경, 파노라마 등). (2~4컷)"
     Layout.WINDOW_SWAP -> "차 실내 카메라 사진의 지붕을 열고 바깥 풍경을 채워요. 실내를 차량 카메라로 찍은 묶음만 돼요. (1컷)"
     Layout.ROUTE_OVERLAY -> "전방 풍경 위에 오늘 달린 길과 다음 목적지를 얹어요. (1컷)"
     else -> l.label
@@ -91,11 +93,12 @@ private fun frameDesc(l: Layout): String = when (l) {
 private fun FramePicker(graph: AppGraph, layouts: List<Layout>, onPick: (Layout) -> Unit) {
     val draft by graph.albumDraft.collectAsState()
     val bundles by graph.phoneAlbum.bundles.collectAsState()
+    val made by graph.phoneAlbum.made.collectAsState()
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text("어떤 프레임으로 만들까요?", color = Tokens.text, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
             draft?.let { "방금 찍은 사진 ${it.bundleIds.size}묶음이 있어요. 프레임을 고르면 칸에 들어가요." }
-                ?: "프레임을 고르면 앨범(${bundles.size}묶음)에서 칸마다 사진을 골라 올려요.",
+                ?: "프레임을 고르면 앨범(묶음 ${bundles.size}개 · 만든 사진 ${made.size}장)에서 칸마다 골라 올려요.",
             color = if (draft != null) Tokens.accent else Tokens.text2, fontSize = Tokens.bodySize,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.fillMaxWidth()) {
@@ -115,333 +118,263 @@ private fun FramePicker(graph: AppGraph, layouts: List<Layout>, onPick: (Layout)
     }
 }
 
-/** ② 프레임별 칸 구성: 왼쪽 앨범, 오른쪽 칸. */
+/** 오른쪽 칸 카드 공통: 제목·설명·칸 격자·만들기 버튼. */
 @Composable
-private fun FrameBuilder(graph: AppGraph, layout: Layout, onBack: () -> Unit) {
-    val bundles by graph.phoneAlbum.bundles.collectAsState()
-    val videos by graph.phoneAlbum.videos.collectAsState()
-    val draft by graph.albumDraft.collectAsState()
-    val mixes by graph.mixes.collectAsState()
-    val scope = rememberCoroutineScope()
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val n = PhoneAlbum.cutSlots(layout)
-    val fourCut = layout == Layout.CUT_FRAME
-    val slots = remember(layout) { mutableStateListOf<PhoneBundle?>(null, null, null, null) }
-    val recipes = remember(layout) { mutableStateListOf(CutRecipe.INTERIOR, CutRecipe.INTERIOR, CutRecipe.INTERIOR, CutRecipe.INTERIOR) }
-    var active by remember(layout) { mutableStateOf(0) }
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var askConsent by remember { mutableStateOf<CutRecipe?>(null) }
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-
-    fun put(b: PhoneBundle) {
-        if (!PhoneAlbum.accepts(layout, b)) { message = "L1 오픈카에는 실내를 차량 카메라로 찍은 묶음만 넣을 수 있어요"; return }
-        slots[active] = b
-        if (!recipes[active].fits(b)) recipes[active] = CutRecipe.default(b)
-        active = PhoneAlbum.nextEmpty(slots.take(n), active); message = null
-    }
-    fun setRecipe(r: CutRecipe) {
-        val b = slots[active] ?: run { message = "먼저 왼쪽에서 ${active + 1}컷에 넣을 묶음을 눌러 주세요"; return }
-        if (!r.fits(b)) { message = "이 묶음에는 ${r.label} 사진이 없어요"; return }
-        if (r.ai && !ai.chaz.sync.AiConsent.given(ctx)) { askConsent = r; return }
-        recipes[active] = r; message = null
-    }
-    // 방금 찍은 촬영: 칸에 미리 넣어 둔다
-    LaunchedEffect(draft, bundles, layout) {
-        val d = draft ?: return@LaunchedEffect
-        val picks = d.bundleIds.mapNotNull { id -> bundles.firstOrNull { it.id == id } }.sortedBy { it.cut }
-            .filter { PhoneAlbum.accepts(layout, it) }.take(n)
-        if (picks.isEmpty()) return@LaunchedEffect
-        slots.indices.forEach { i -> slots[i] = picks.getOrNull(i); picks.getOrNull(i)?.let { recipes[i] = CutRecipe.default(it) } }
-        active = PhoneAlbum.nextEmpty(slots.take(n), picks.size - 1)
-        graph.albumDraft.value = null
-        listState.scrollToItem(0)
-    }
-    // 지운 묶음이 칸에 남지 않게
-    LaunchedEffect(bundles) {
-        slots.indices.forEach { i -> if (slots[i] != null && bundles.none { it.id == slots[i]?.id }) slots[i] = null }
-    }
-    // AI 조합 칸은 넣는 즉시 서버에 요청 (결과는 묶음 폴더에 남아 다시 쓰인다)
-    LaunchedEffect(slots.toList(), recipes.toList()) {
-        if (!fourCut) return@LaunchedEffect
-        (0 until n).forEach { i -> val b = slots[i]; val r = recipes[i]; if (b != null && r.ai) graph.requestMix(b, r) }
-    }
-
-    Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Card(Modifier.weight(1f).fillMaxHeight(), title = "앨범") {
-            AlbumList(bundles, videos, slots.take(n), layout, listState, active,
-                onPick = { put(it) },
-                onFill = { cuts -> cuts.take(n).forEachIndexed { i, b -> slots[i] = b; if (!recipes[i].fits(b)) recipes[i] = CutRecipe.default(b) } },
-                onDelete = { id -> scope.launch { graph.phoneAlbum.delete(id) } })
-        }
-        Card(Modifier.width(760.dp).fillMaxHeight(), title = frameTitle(layout), trailing = { Chip("← 프레임 다시 고르기", selected = false, onClick = onBack) }) {
-            Text(frameDesc(layout), color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
-            SectionLabel("칸 — 칸을 고르고 왼쪽 묶음을 누르세요", Modifier.padding(top = 16.dp))
-            val grid = if (n == 4) listOf(0..1, 2..3) else listOf(0..0)
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                grid.forEach { r ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        r.forEach { i ->
-                            val b = slots[i]
-                            val recipe = recipes[i]
-                            val state: AppGraph.MixState? = when {
-                                b == null -> null
-                                !fourCut || !recipe.ai -> AppGraph.MixState.Done(b.photos[if (fourCut) recipe.roles[0] else CameraRole.INTERIOR] ?: "")
-                                else -> graph.recipePath(b, recipe)?.let { AppGraph.MixState.Done(it) } ?: mixes[graph.mixKey(b, recipe)] ?: AppGraph.MixState.Working
-                            }
-                            SlotBox(i + 1, b, if (fourCut) recipe else null, state, i == active, Modifier.weight(1f),
-                                onClick = { active = i },
-                                onClear = { slots[i] = null; active = i },
-                                onRetry = { b?.let { graph.requestMix(it, recipe, retry = true) } })
-                        }
-                        if (n == 1) Spacer(Modifier.weight(1f))
-                    }
-                }
-            }
-            if (fourCut) {
-                SectionLabel("${active + 1}컷 조합", Modifier.padding(top = 16.dp))
-                val cur = slots[active]
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                    CutRecipe.entries.forEach { r ->
-                        Chip(if (r.ai) "✨ ${r.label}" else r.label, selected = cur != null && recipes[active] == r,
-                            enabled = cur == null || r.fits(cur)) { setRecipe(r) }
-                    }
-                }
-                Text(
-                    "✨ 조합은 실내 사진(얼굴 포함)과 바깥 풍경이 차~즈 서버를 거쳐 AI(Google Gemini)로 보내져 한 장으로 섞여요. 칸마다 15초쯤 걸리고, 같은 묶음·조합은 한 번만 만들어요.",
-                    color = Tokens.text3, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            val filled = (0 until n).mapNotNull { i -> slots[i]?.let { it to recipes[i] } }
-            val wrong = filled.any { !PhoneAlbum.accepts(layout, it.first) }
-            val waiting = fourCut && filled.any { (b, r) -> graph.recipePath(b, r) == null }
-            val enough = filled.size >= PhoneAlbum.minCuts(layout)
-            PrimaryButton(
-                when {
-                    wrong -> "오픈카에 못 쓰는 묶음이 있어요 — 빼 주세요"
-                    !enough -> "컷을 ${PhoneAlbum.minCuts(layout)}개 이상 넣어 주세요"
-                    waiting -> "✨ AI 조합이 끝나면 만들 수 있어요"
-                    else -> "이 구성으로 만들기 (${filled.size}컷)"
-                },
-                Modifier.fillMaxWidth(), enabled = enough && !wrong && !waiting && !busy,
-            ) {
-                busy = true
-                scope.launch {
-                    val ok = if (fourCut) graph.editRecipes(filled)
-                    else PhoneAlbum.cutsFor(layout, slots.toList())?.let { graph.editPhoneBundles(layout, it) } ?: false
-                    message = if (ok) null else "지금은 만들 수 없어요(촬영 중이거나 사진이 준비되지 않음). 잠시 뒤 다시 눌러 주세요"
-                    busy = false
-                }
-            }
-            message?.let { Text(it, color = Tokens.warn, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp)) }
-        }
-    }
-
-    askConsent?.let { r ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { askConsent = null },
-            containerColor = Tokens.surface,
-            title = { Text("AI 조합 사용 동의", color = Tokens.text, fontSize = 24.sp, fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "고른 묶음의 실내 사진(얼굴 포함)과 바깥 풍경이 차~즈 서버를 거쳐 AI 서비스(Google Gemini)로 전송되고, 한 장으로 섞여요.\n\n" +
-                        "• 서버는 보낸 사진을 저장하지 않아요\n" +
-                        "• 결과물에는 'AI 생성 포함' 표시가 남아요\n" +
-                        "• 사진에 나온 모든 사람이 동의한 경우에만 사용해 주세요",
-                    color = Tokens.text2, fontSize = 18.sp, lineHeight = 27.sp,
-                )
-            },
-            confirmButton = {
-                PrimaryButton("동의하고 ${r.label} 만들기", color = Tokens.ai) {
-                    ai.chaz.sync.AiConsent.set(ctx, true)
-                    askConsent = null
-                    setRecipe(r)
-                }
-            },
-            dismissButton = { Chip("동의 안 함", selected = false) { askConsent = null } },
-        )
-    }
-}
-
-/** 앨범 목록: 동영상은 같은 촬영의 묶음들 바로 위에. */
-@Composable
-private fun AlbumList(
-    bundles: List<PhoneBundle>, videos: List<AlbumVideo>, slots: List<PhoneBundle?>, layout: Layout,
-    listState: androidx.compose.foundation.lazy.LazyListState, active: Int,
-    onPick: (PhoneBundle) -> Unit, onFill: (List<PhoneBundle>) -> Unit, onDelete: (String) -> Unit,
+private fun SlotsCard(
+    layout: Layout, onBack: () -> Unit, hint: String, n: Int,
+    slot: @Composable (Int, Modifier) -> Unit,
+    buttonText: String, enabled: Boolean, message: String?, onMake: () -> Unit,
+    modifier: Modifier,
 ) {
-    if (bundles.isEmpty() && videos.isEmpty()) {
-        Text(
-            "아직 찍은 사진이 없어요.\n'차~즈'(단발·동영상)로 찍거나, 폰 카메라에서 실내 → 전방 → 후방 3장을 찍어 보내면 여기에 쌓여요.",
-            color = Tokens.text2, fontSize = Tokens.bodySize,
-        )
-        return
-    }
-    Text("묶음을 누르면 오른쪽에서 고른 칸(${active + 1}컷)에 들어가요.", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
-    val rows: List<Any> = buildList {
-        val placed = mutableSetOf<String>()
-        bundles.forEach { b ->
-            videos.firstOrNull { it.group == b.group && it.id !in placed }?.let { add(it); placed += it.id }
-            add(b)
-        }
-        videos.filter { it.id !in placed }.forEach { add(it) }
-    }
-    LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(rows, key = { (it as? PhoneBundle)?.id ?: (it as AlbumVideo).id }) { row ->
-            when (row) {
-                is PhoneBundle -> {
-                    val used = slots.withIndex().filter { it.value?.id == row.id }.map { it.index + 1 }
-                    BundleRow(row, used, PhoneAlbum.accepts(layout, row), onClick = { onPick(row) }, onDelete = { onDelete(row.id) })
-                }
-                is AlbumVideo -> {
-                    val cuts = bundles.filter { it.group == row.group }.sortedBy { it.cut }
-                    VideoRow(row, if (layout == Layout.CUT_FRAME) cuts.size else 0, onFill = { onFill(cuts) }, onDelete = { onDelete(row.id) })
+    Card(modifier.fillMaxHeight(), title = frameTitle(layout), trailing = { Chip("← 프레임 다시 고르기", selected = false, onClick = onBack) }) {
+        Text(frameDesc(layout), color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
+        SectionLabel(hint, Modifier.padding(top = 16.dp))
+        val grid = if (n == 4) listOf(0..1, 2..3) else listOf(0..0)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            grid.forEach { r ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    r.forEach { i -> slot(i, Modifier.weight(1f)) }
+                    if (n == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
-    }
-}
-
-private fun originText(b: PhoneBundle): String = when (b.origin) {
-    AlbumOrigin.PHONE -> "폰"
-    AlbumOrigin.CAR_SINGLE -> "단발"
-    AlbumOrigin.CAR_VIDEO -> "동영상 ${b.cut}컷째"
-}
-
-@Composable
-private fun BundleRow(b: PhoneBundle, usedIn: List<Int>, fits: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
-    val on = usedIn.isNotEmpty()
-    Column(
-        Modifier.fillMaxWidth().clip(Tokens.controlShape)
-            .background(if (on) Tokens.accentSoft else Tokens.surface2)
-            .border(if (on) 3.dp else 1.dp, if (on) Tokens.accent else Tokens.line, Tokens.controlShape)
-            .clickable(onClick = onClick).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PhoneAlbum.SLOTS.forEach { role -> Thumb(b.photos[role], PhoneAlbum.label(role), Modifier.weight(1f)) }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Tag(originText(b))
-            Text("  ${whenText(b.receivedAt)} · ${b.photos.size}장", color = if (fits) Tokens.text else Tokens.text3, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            if (on) Text("  ${usedIn.joinToString(", ")}컷에 넣음", color = Tokens.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            Chip("지우기", selected = false, onClick = onDelete)
-        }
-    }
-}
-
-/** 동영상 촬영의 12초 영상: 실내·전방·후방 스냅샷을 0.5초마다 넘겨 재생. */
-@Composable
-private fun VideoRow(v: AlbumVideo, cutCount: Int, onFill: () -> Unit, onDelete: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(Tokens.controlShape).background(Tokens.surface2)
-            .border(1.dp, Tokens.line, Tokens.controlShape).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PhoneAlbum.SLOTS.forEach { role -> ClipThumb(v.clips[role], PhoneAlbum.label(role), Modifier.weight(1f)) }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Tag("▶ 영상 ${v.durationMs / 1000}초")
-            Text(whenText(v.at), color = Tokens.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            if (cutCount >= 2) Chip("이 촬영 ${minOf(cutCount, 4)}컷 → 네컷에 넣기", selected = false, onClick = onFill)
-            Chip("영상 지우기", selected = false, onClick = onDelete)
-        }
+        Spacer(Modifier.weight(1f))
+        PrimaryButton(buttonText, Modifier.fillMaxWidth(), enabled = enabled, onClick = onMake)
+        message?.let { Text(it, color = Tokens.warn, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp)) }
     }
 }
 
 @Composable
-private fun Tag(text: String) {
-    Text(
-        text, color = Tokens.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-        modifier = Modifier.background(Tokens.accentSoft, Tokens.controlShape).padding(horizontal = 8.dp, vertical = 2.dp),
-    )
-}
-
-/**
- * 칸: 비어 있으면 번호만. 네컷 조합(recipe)이면 칸에 들어갈 사진 하나(AI 는 진행 상태), 아니면 묶음의 실내·전방·후방.
- */
-@Composable
-private fun SlotBox(
-    no: Int, b: PhoneBundle?, recipe: CutRecipe?, state: AppGraph.MixState?, active: Boolean, modifier: Modifier,
-    onClick: () -> Unit, onClear: () -> Unit, onRetry: () -> Unit,
-) {
+private fun SlotFrame(no: Int, active: Boolean, filled: Boolean, caption: String, modifier: Modifier, onClick: () -> Unit, onClear: () -> Unit, content: @Composable () -> Unit) {
     Column(
         modifier.clip(Tokens.controlShape).background(Tokens.surface2)
             .border(if (active) 4.dp else 1.dp, if (active) Tokens.accent else Tokens.line, Tokens.controlShape)
             .clickable(onClick = onClick).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (b == null) {
+        if (!filled) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Tokens.bg, Tokens.controlShape), contentAlignment = Alignment.Center) {
-                Text(if (active) "${no}컷 — 왼쪽에서 묶음을 누르세요" else "${no}컷 비어 있음", color = if (active) Tokens.accent else Tokens.text3, fontSize = 15.sp)
+                Text(if (active) "${no}컷 — 왼쪽에서 고르세요" else "${no}컷 비어 있음", color = if (active) Tokens.accent else Tokens.text3, fontSize = 15.sp)
             }
             return@Column
         }
-        if (recipe != null) {
-            // 칸에 실제로 들어가는 모양(16:9 로 채움)
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(Tokens.controlShape).background(Tokens.bg), contentAlignment = Alignment.Center) {
-                when (state) {
-                    is AppGraph.MixState.Done -> CellImage(state.path, Modifier.fillMaxSize())
-                    is AppGraph.MixState.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(state.message, color = Tokens.warn, fontSize = 14.sp)
-                        Chip("다시 시도", selected = false, onClick = onRetry)
-                    }
-                    else -> Text("✨ AI가 섞는 중… (약 15초)", color = Tokens.text, fontSize = 15.sp)
-                }
-            }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                PhoneAlbum.SLOTS.forEach { role -> Thumb(b.photos[role], PhoneAlbum.label(role), Modifier.weight(1f)) }
-            }
-        }
+        content()
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${no}컷 · " + (recipe?.let { (if (it.ai) "✨ " else "") + it.label } ?: originText(b)),
-                color = Tokens.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f),
-            )
+            Text("${no}컷 · $caption", color = Tokens.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f))
             Chip("빼기", selected = false, onClick = onClear)
         }
     }
 }
 
-@Composable
-private fun CellImage(path: String, modifier: Modifier) {
-    var img by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(path) {
-        img = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = 4 })?.asImageBitmap() }
-    }
-    img?.let { Image(it, null, modifier, contentScale = ContentScale.Crop) }
-}
+private const val BUSY_TEXT = "지금은 만들 수 없어요(촬영 중이거나 사진이 준비되지 않음). 잠시 뒤 다시 눌러 주세요"
 
+/** ② L2 네컷: 칸마다 앨범 사진 한 장(묶음의 실내·전방·후방 중 하나, 또는 만든 사진). */
 @Composable
-private fun ClipThumb(dir: String?, label: String, modifier: Modifier) {
-    val files = remember(dir) { dir?.let { d -> File(d).listFiles { f -> f.name.endsWith(".jpg") }?.sortedBy { it.name } }.orEmpty() }
-    var i by remember(dir) { mutableStateOf(0) }
-    LaunchedEffect(dir, files.size) {
-        while (files.size > 1) { delay(500); i = (i + 1) % files.size }
-    }
-    Thumb(files.getOrNull(i)?.absolutePath, label, modifier)
-}
+private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit) {
+    val bundles by graph.phoneAlbum.bundles.collectAsState()
+    val videos by graph.phoneAlbum.videos.collectAsState()
+    val made by graph.phoneAlbum.made.collectAsState()
+    val draft by graph.albumDraft.collectAsState()
+    val scope = rememberCoroutineScope()
+    val n = 4
+    val slots = remember { mutableStateListOf<AlbumPick?>(null, null, null, null) }
+    var active by remember { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
-@Composable
-private fun Thumb(path: String?, label: String, modifier: Modifier) {
-    // 새 사진을 읽는 동안 이전 사진을 그대로 둔다 (영상 재생 때 깜빡임 방지)
-    var img by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(path) {
-        img = path?.let { p -> withContext(Dispatchers.IO) { BitmapFactory.decodeFile(p, BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap() } }
+    fun put(p: AlbumPick) { slots[active] = p; active = PhoneAlbum.nextEmpty(slots.toList(), active); message = null }
+    // 방금 찍은 촬영: 컷마다 실내 사진을 칸에 미리 넣는다
+    LaunchedEffect(draft, bundles) {
+        val d = draft ?: return@LaunchedEffect
+        val picks = d.bundleIds.mapNotNull { id -> bundles.firstOrNull { it.id == id } }.sortedBy { it.cut }.mapNotNull(PhoneAlbum::firstPhoto).take(n)
+        if (picks.isEmpty()) return@LaunchedEffect
+        slots.indices.forEach { i -> slots[i] = picks.getOrNull(i) }
+        active = PhoneAlbum.nextEmpty(slots.toList(), picks.size - 1)
+        graph.albumDraft.value = null
+        listState.scrollToItem(0)
     }
-    Box(modifier.aspectRatio(4f / 3f).clip(Tokens.controlShape).background(Tokens.bg)) {
-        img?.let { Image(it, label, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) } // 찍힌 프레임 전체(자르지 않음)
-            ?: Text("없음", color = Tokens.text3, fontSize = 13.sp, modifier = Modifier.align(Alignment.Center))
-        Text(
-            label, color = Tokens.text, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.BottomStart).background(Tokens.bg.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp),
+    // 앨범에서 지운 사진이 칸에 남지 않게
+    LaunchedEffect(bundles, made) {
+        slots.indices.forEach { i ->
+            val gone = when (val p = slots[i]) {
+                is AlbumPick.Photo -> bundles.none { it.id == p.bundle.id }
+                is AlbumPick.Made -> made.none { it.id == p.photo.id }
+                null -> false
+            }
+            if (gone) slots[i] = null
+        }
+    }
+
+    Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Card(Modifier.weight(1f).fillMaxHeight(), title = "앨범에서 고르기") {
+            if (bundles.isEmpty() && made.isEmpty()) {
+                Text("앨범이 비어 있어요. '차~즈'로 찍거나 폰에서 묶음을 보내 주세요.", color = Tokens.text2, fontSize = Tokens.bodySize)
+                return@Card
+            }
+            Text("사진 한 장을 누르면 고른 칸(${active + 1}컷)에 들어가요. 합친 사진은 앨범 탭에서 만들어요.", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
+            val used = slots.mapIndexedNotNull { i, p -> p?.let { it.key to i + 1 } }.groupBy({ it.first }, { it.second })
+            val rows: List<Any> = buildList {
+                if (made.isNotEmpty()) { add("만든 사진"); addAll(made) }
+                add("찍은 묶음")
+                val placed = mutableSetOf<String>()
+                bundles.forEach { b ->
+                    videos.firstOrNull { it.group == b.group && it.id !in placed }?.let { add(it); placed += it.id }
+                    add(b)
+                }
+            }
+            LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(rows, key = { r -> when (r) { is PhoneBundle -> r.id; is MadePhoto -> r.id; is AlbumVideo -> r.id; else -> "h:$r" } }) { r ->
+                    when (r) {
+                        is String -> SectionLabel(r, Modifier.padding(top = 6.dp))
+                        is MadePhoto -> {
+                            val pick = AlbumPick.Made(r)
+                            PickRow(used[pick.key], onClick = { put(pick) }) {
+                                Thumb(r.path, "", Modifier.width(220.dp), ratio = 16f / 9f)
+                                Text((if (r.ai) "✨ " else "") + r.label, color = Tokens.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
+                            }
+                        }
+                        is PhoneBundle -> Column(
+                            Modifier.fillMaxWidth().clip(Tokens.controlShape).background(Tokens.surface2).border(1.dp, Tokens.line, Tokens.controlShape).padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                PhoneAlbum.SLOTS.forEach { role ->
+                                    val pick = AlbumPick.Photo(r, role)
+                                    val on = used[pick.key]
+                                    Box(
+                                        Modifier.weight(1f).clip(Tokens.controlShape)
+                                            .border(if (on != null) 3.dp else 0.dp, if (on != null) Tokens.accent else Tokens.surface2, Tokens.controlShape)
+                                            .clickable(enabled = r.photos.containsKey(role)) { put(pick) },
+                                    ) {
+                                        Thumb(r.photos[role], PhoneAlbum.label(role) + (on?.let { " · ${it.joinToString(",")}컷" } ?: ""), Modifier.fillMaxWidth())
+                                    }
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AlbumTag(originText(r))
+                                Text("  ${whenText(r.receivedAt)}", color = Tokens.text2, fontSize = 15.sp)
+                            }
+                        }
+                        is AlbumVideo -> {
+                            val cuts = bundles.filter { it.group == r.group }.sortedBy { it.cut }.mapNotNull(PhoneAlbum::firstPhoto)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                AlbumTag("▶ 영상 ${r.durationMs / 1000}초 · ${whenText(r.at)}")
+                                Spacer(Modifier.weight(1f))
+                                if (cuts.size >= 2) Chip("이 촬영 ${minOf(cuts.size, n)}컷 실내 → 네컷에 넣기", selected = false) {
+                                    cuts.take(n).forEachIndexed { i, p -> slots[i] = p }; message = null
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val filled = slots.filterNotNull()
+        SlotsCard(
+            Layout.CUT_FRAME, onBack, "칸 — 칸을 고르고 왼쪽 사진을 누르세요", n,
+            slot = { i, m ->
+                val p = slots[i]
+                SlotFrame(i + 1, i == active, p != null, p?.let { (if (it.ai) "✨ " else "") + it.label } ?: "", m,
+                    onClick = { active = i }, onClear = { slots[i] = null; active = i }) {
+                    // 칸에 실제로 들어가는 모양(16:9 로 채움)
+                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(Tokens.controlShape).background(Tokens.bg)) {
+                        PhotoImage(p?.path, Modifier.fillMaxSize())
+                    }
+                }
+            },
+            buttonText = if (filled.size >= 2) "이 구성으로 만들기 (${filled.size}컷)" else "컷을 2개 이상 넣어 주세요",
+            enabled = filled.size >= 2 && !busy, message = message,
+            onMake = {
+                busy = true
+                scope.launch { message = if (graph.editPicks(filled)) null else BUSY_TEXT; busy = false }
+            },
+            modifier = Modifier.width(760.dp),
         )
     }
 }
 
-private fun whenText(ms: Long): String = SimpleDateFormat("M월 d일 HH:mm:ss", Locale.KOREA).format(Date(ms))
+@Composable
+private fun PickRow(usedIn: List<Int>?, onClick: () -> Unit, content: @Composable () -> Unit) {
+    val on = usedIn != null
+    Row(
+        Modifier.fillMaxWidth().clip(Tokens.controlShape)
+            .background(if (on) Tokens.accentSoft else Tokens.surface2)
+            .border(if (on) 3.dp else 1.dp, if (on) Tokens.accent else Tokens.line, Tokens.controlShape)
+            .clickable(onClick = onClick).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        content()
+        Spacer(Modifier.weight(1f))
+        usedIn?.let { Text("${it.joinToString(", ")}컷에 넣음", color = Tokens.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+    }
+}
+
+/** ② L1 오픈카 · L3 경로: 칸 1개 = 묶음 하나(실내·전방·후방을 프레임이 알아서 쓴다). */
+@Composable
+private fun BundleFrameBuilder(graph: AppGraph, layout: Layout, onBack: () -> Unit) {
+    val bundles by graph.phoneAlbum.bundles.collectAsState()
+    val draft by graph.albumDraft.collectAsState()
+    val scope = rememberCoroutineScope()
+    var slot by remember(layout) { mutableStateOf<PhoneBundle?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    fun put(b: PhoneBundle) {
+        if (!PhoneAlbum.accepts(layout, b)) { message = "L1 오픈카에는 실내를 차량 카메라로 찍은 묶음만 넣을 수 있어요"; return }
+        slot = b; message = null
+    }
+    LaunchedEffect(draft, bundles, layout) {
+        val d = draft ?: return@LaunchedEffect
+        bundles.filter { it.id in d.bundleIds && PhoneAlbum.accepts(layout, it) }.minByOrNull { it.cut }?.let { slot = it }
+        graph.albumDraft.value = null
+    }
+    LaunchedEffect(bundles) { if (slot != null && bundles.none { it.id == slot?.id }) slot = null }
+
+    Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Card(Modifier.weight(1f).fillMaxHeight(), title = "앨범에서 고르기") {
+            if (bundles.isEmpty()) {
+                Text("앨범이 비어 있어요. '차~즈'로 찍거나 폰에서 묶음을 보내 주세요.", color = Tokens.text2, fontSize = Tokens.bodySize)
+                return@Card
+            }
+            Text("묶음을 누르면 칸에 들어가요.", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(bundles, key = { it.id }) { b ->
+                    val fits = PhoneAlbum.accepts(layout, b)
+                    val on = slot?.id == b.id
+                    Column(
+                        Modifier.fillMaxWidth().clip(Tokens.controlShape)
+                            .background(if (on) Tokens.accentSoft else Tokens.surface2)
+                            .border(if (on) 3.dp else 1.dp, if (on) Tokens.accent else Tokens.line, Tokens.controlShape)
+                            .clickable { put(b) }.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        BundleThumbs(b)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AlbumTag(originText(b))
+                            Text("  ${whenText(b.receivedAt)}" + if (fits) "" else " · 이 프레임에 못 씀", color = if (fits) Tokens.text2 else Tokens.text3, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
+        SlotsCard(
+            layout, onBack, "칸 — 왼쪽 묶음을 누르세요", 1,
+            slot = { _, m ->
+                val b = slot
+                SlotFrame(1, true, b != null, b?.let(::originText) ?: "", m, onClick = {}, onClear = { slot = null }) {
+                    b?.let { BundleThumbs(it) }
+                }
+            },
+            buttonText = if (slot != null) "이 구성으로 만들기" else "묶음을 하나 넣어 주세요",
+            enabled = slot != null && !busy, message = message,
+            onMake = {
+                slot?.let { b ->
+                    busy = true
+                    scope.launch { message = if (graph.editPhoneBundles(layout, listOf(b))) null else BUSY_TEXT; busy = false }
+                }
+            },
+            modifier = Modifier.width(760.dp),
+        )
+    }
+}

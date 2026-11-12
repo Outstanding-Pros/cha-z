@@ -58,16 +58,21 @@ class PhoneAlbumTest {
         assertEquals(Layout.ROUTE_OVERLAY to listOf(one), PhoneAlbum.draftFor(listOf(one), Layout.ROUTE_OVERLAY))
     }
 
-    @Test fun `네컷 조합 - 한 자리는 그대로, 실내+바깥은 AI, 없는 사진 조합은 못 고름`() {
-        assertEquals(false, CutRecipe.FRONT.ai)
-        assertEquals(true, CutRecipe.INTERIOR_REAR.ai)
-        assertEquals(CameraRole.REAR, CutRecipe.INTERIOR_REAR.view)
+    @Test fun `네컷 칸 기본 사진은 실내, 없으면 전방`() {
+        assertEquals(AlbumPick.Photo(a, CameraRole.INTERIOR), PhoneAlbum.firstPhoto(a))
+        assertEquals(CameraRole.FRONT, PhoneAlbum.firstPhoto(a.copy(photos = a.photos - CameraRole.INTERIOR))?.role)
+        assertNull(PhoneAlbum.firstPhoto(a.copy(photos = emptyMap())))
+        assertEquals("a/REAR", AlbumPick.Photo(a, CameraRole.REAR).key)
+    }
+
+    @Test fun `만들기 기능은 필요한 사진이 있는 묶음만, id 는 서로 다르다`() {
         val noRear = a.copy(photos = a.photos - CameraRole.REAR)
-        assertEquals(false, CutRecipe.INTERIOR_REAR.fits(noRear))
-        assertEquals(true, CutRecipe.INTERIOR_FRONT.fits(noRear))
-        // 처음 넣을 때는 비용 없는 조합 (실내 없으면 전방)
-        assertEquals(CutRecipe.INTERIOR, CutRecipe.default(a))
-        assertEquals(CutRecipe.FRONT, CutRecipe.default(a.copy(photos = a.photos - CameraRole.INTERIOR)))
+        assertEquals(true, AlbumTools.byId("person_front")!!.accepts(noRear))
+        assertEquals(false, AlbumTools.byId("person_rear")!!.accepts(noRear))
+        assertEquals(false, AlbumTools.Panorama.accepts(noRear))
+        assertEquals(true, AlbumTools.Panorama.accepts(a))
+        assertEquals(false, AlbumTools.Collage.ai)
+        assertEquals(AlbumTools.all.size, AlbumTools.all.map { it.id }.toSet().size)
     }
 
     @Test fun `서버 roles 는 아는 자리만`() {

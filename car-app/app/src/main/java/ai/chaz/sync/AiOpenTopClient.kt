@@ -18,9 +18,16 @@ class AiOpenTopClient(private val baseUrl: String, private val timeoutMs: Int = 
     suspend fun open(interior: Bitmap, exterior: Bitmap?): Bitmap =
         post("/frames/opentop", listOfNotNull("interior" to (interior to 1600), exterior?.let { "exterior" to (it to 1024) }), emptyMap(), "AI 편집에 실패했어요")
 
-    /** 🎞 AI 네컷 조합 (POST /frames/mix): 실내 사진 + 같은 순간 전방/후방 풍경 → 한 장. view = "FRONT" | "REAR". */
-    suspend fun mix(interior: Bitmap, exterior: Bitmap, view: String): Bitmap =
-        post("/frames/mix", listOf("interior" to (interior to 1600), "exterior" to (exterior to 1280)), mapOf("view" to view), "AI 조합에 실패했어요")
+    /**
+     * 앨범 만들기 (POST /frames/mix): 실내 사진 + 같은 순간 바깥 풍경 → 한 장.
+     * view = "FRONT" | "REAR" (사람을 그 풍경 앞에) | "PANORAMA" (exterior=전방, exterior2=후방을 잇고 가운데에 사람).
+     */
+    suspend fun mix(interior: Bitmap, exterior: Bitmap, view: String, exterior2: Bitmap? = null): Bitmap =
+        post(
+            "/frames/mix",
+            listOfNotNull("interior" to (interior to 1600), "exterior" to (exterior to 1280), exterior2?.let { "exterior2" to (it to 1280) }),
+            mapOf("view" to view), "AI로 만들지 못했어요",
+        )
 
     private suspend fun post(path: String, images: List<Pair<String, Pair<Bitmap, Int>>>, fields: Map<String, String>, failText: String): Bitmap = withContext(Dispatchers.IO) {
         val boundary = "chaz" + System.nanoTime()

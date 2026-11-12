@@ -309,8 +309,13 @@ async def frames_opentop(interior: UploadFile = File(...), exterior: UploadFile 
 
 
 @app.post("/frames/mix")
-async def frames_mix(interior: UploadFile = File(...), exterior: UploadFile = File(...), view: str = Form("FRONT")):
-    """🎞 AI 네컷 조합: 실내 사진 + 같은 순간 전방/후방 풍경 → 한 장(JPEG). 얼굴 사진이라 저장하지 않고 로그엔 크기·시간만."""
+async def frames_mix(
+    interior: UploadFile = File(...), exterior: UploadFile = File(...), view: str = Form("FRONT"),
+    exterior2: UploadFile | None = File(None),
+):
+    """🎞 앨범 만들기: 실내 사진 + 같은 순간 바깥 풍경 → 한 장(JPEG).
+    view = FRONT|REAR (사람을 그 풍경 앞에) | PANORAMA (exterior=전방, exterior2=후방을 이어 붙이고 가운데에 사람).
+    얼굴 사진이라 저장하지 않고 로그엔 크기·시간만."""
     import asyncio as _aio
     import io as _io
 
@@ -326,14 +331,18 @@ async def frames_mix(interior: UploadFile = File(...), exterior: UploadFile = Fi
         im.save(buf, "JPEG", quality=90)
         return buf.getvalue()
 
-    if view not in prompts.MIX_VIEW:
-        raise HTTPException(400, "view 는 FRONT 또는 REAR")
-    raw, ext = await interior.read(), await exterior.read()
-    for b in (raw, ext):
+    if view not in prompts.MIX_VIEW and view != "PANORAMA":
+        raise HTTPException(400, "view 는 FRONT, REAR, PANORAMA")
+    raws = [await interior.read(), await exterior.read()]
+    if view == "PANORAMA":
+        if exterior2 is None:
+            raise HTTPException(400, "파노라마는 전방·후방 두 장이 필요해요")
+        raws.append(await exterior2.read())
+    for b in raws:
         if not b or len(b) > 8 * 1024 * 1024:
             raise HTTPException(413 if b else 400, "사진은 8MB 이하")
-    images = [_jpeg(raw, 1600), _jpeg(ext, 1280)]
-    prompt = prompts.MIX_PROMPT.format(view=prompts.MIX_VIEW[view])
+    images = [_jpeg(raws[0], 1600)] + [_jpeg(b, 1280) for b in raws[1:]]
+    prompt = prompts.PANORAMA_PROMPT if view == "PANORAMA" else prompts.MIX_PROMPT.format(view=prompts.MIX_VIEW[view])
     model = os.getenv("MIX_MODEL", os.getenv("OPENTOP_MODEL", "google/gemini-3.1-flash-image"))
     t0 = time.time()
     try:

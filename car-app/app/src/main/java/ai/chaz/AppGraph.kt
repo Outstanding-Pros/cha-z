@@ -606,59 +606,56 @@ class AppGraph(context: Context) {
         return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, cuts, emptyList(), stopped = false))
     }
 
-    // ---- 편집 탭 네컷 조합: 칸마다 실내·전방·후방 한 장, 또는 실내+바깥을 AI 로 섞은 사진 ----
-    sealed interface MixState {
-        data object Working : MixState
-        data class Done(val path: String) : MixState
-        data class Failed(val message: String) : MixState
+    // ---- 앨범 '만들기': 묶음 + 기능(AlbumTools) → 앨범의 새 사진 ----
+    sealed interface ToolState {
+        data object Working : ToolState
+        data class Failed(val message: String) : ToolState
     }
-    private val _mixes = MutableStateFlow<Map<String, MixState>>(emptyMap())
-    /** 묶음·조합별 AI 조합 진행 상태 (탭을 옮겨도 이어진다). */
-    val mixes: StateFlow<Map<String, MixState>> = _mixes.asStateFlow()
-    fun mixKey(b: ai.chaz.sync.PhoneBundle, r: ai.chaz.sync.CutRecipe) = "${b.id}:${r.name}"
+    private val _toolJobs = MutableStateFlow<Map<String, ToolState>>(emptyMap())
+    /** 묶음·기능별 진행 상태 (끝나면 지워지고 결과는 phoneAlbum.made 에 들어간다). 탭을 옮겨도 이어진다. */
+    val toolJobs: StateFlow<Map<String, ToolState>> = _toolJobs.asStateFlow()
+    fun toolKey(b: ai.chaz.sync.PhoneBundle, t: ai.chaz.sync.AlbumTool) = "${b.id}:${t.id}"
 
-    /** 칸에 넣을 사진: 한 자리는 원본, AI 조합은 받아 둔 결과(아직 없으면 null). */
-    fun recipePath(b: ai.chaz.sync.PhoneBundle, r: ai.chaz.sync.CutRecipe): String? =
-        if (!r.ai) b.photos[r.roles[0]] else phoneAlbum.mixFile(b, r).takeIf { it.exists() }?.absolutePath
-
-    /** AI 조합을 서버에 요청 (묶음·조합마다 한 번만 — 결과는 묶음 폴더에 남겨 다시 쓴다, 비용 절약). */
-    fun requestMix(b: ai.chaz.sync.PhoneBundle, r: ai.chaz.sync.CutRecipe, retry: Boolean = false) {
-        if (!r.ai || !r.fits(b)) return
-        val key = mixKey(b, r)
-        val cur = _mixes.value[key]
-        if (cur is MixState.Working || (cur is MixState.Failed && !retry)) return
-        recipePath(b, r)?.let { p -> _mixes.update { it + (key to MixState.Done(p)) }; return }
-        _mixes.update { it + (key to MixState.Working) }
+    /** 만들기 실행. 이미 만든 결과가 있으면 다시 만들지 않는다(비용 절약) — remake 면 새로. */
+    fun runTool(b: ai.chaz.sync.PhoneBundle, t: ai.chaz.sync.AlbumTool, remake: Boolean = false) {
+        if (!t.accepts(b)) return
+        val key = toolKey(b, t)
+        if (_toolJobs.value[key] is ToolState.Working) return
+        if (!remake && phoneAlbum.made(b, t.id) != null) return
+        _toolJobs.update { it + (key to ToolState.Working) }
         scope.launch {
-            val st = try {
-                val file = phoneAlbum.mixFile(b, r)
-                val (interior, outside) = withContext(Dispatchers.IO) {
-                    BitmapFactory.decodeFile(b.photos[CameraRole.INTERIOR]) to BitmapFactory.decodeFile(b.photos[r.view])
-                }
-                if (interior == null || outside == null) error("사진을 읽지 못했어요")
-                val out = aiOpenTop.mix(interior, outside, r.view!!.name)
-                withContext(Dispatchers.IO) { file.parentFile?.mkdirs(); file.outputStream().use { out.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) } }
-                android.util.Log.i("ChazMix", "AI 조합 완료 ${r.name}")
-                MixState.Done(file.absolutePath)
+            val failed: ToolState? = try {
+                val photos = withContext(Dispatchers.IO) { t.needs.associateWith { r -> BitmapFactory.decodeFile(b.photos[r]) } }
+                if (photos.values.any { it == null }) error("사진을 읽지 못했어요")
+                @Suppress("UNCHECKED_CAST")
+                val out = t.make(photos as Map<CameraRole, android.graphics.Bitmap>, aiOpenTop)
+                phoneAlbum.saveMade(b, t, out)
+                android.util.Log.i("ChazAlbum", "만들기 완료 ${t.id}")
+                null
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("ChazMix", "AI 조합 실패: ${e.javaClass.simpleName}")
-                MixState.Failed((e as? ai.chaz.sync.AiOpenTopClient.Failed)?.message ?: "AI 조합에 실패했어요")
+                android.util.Log.w("ChazAlbum", "만들기 실패 ${t.id}: ${e.javaClass.simpleName}")
+                ToolState.Failed((e as? ai.chaz.sync.AiOpenTopClient.Failed)?.message ?: "만들지 못했어요")
             }
-            _mixes.update { it + (key to st) }
+            _toolJobs.update { if (failed == null) it - key else it + (key to failed) }
         }
     }
 
-    /** 네컷 조합 칸들(묶음 + 조합)로 편집 화면을 연다. 칸 사진이 다 준비돼야 한다. 촬영 중이면 false. */
-    suspend fun editRecipes(cells: List<Pair<ai.chaz.sync.PhoneBundle, ai.chaz.sync.CutRecipe>>): Boolean {
-        if (capture.model.value.state is AppState.Capturing || cells.isEmpty()) return false
-        val paths = cells.map { (b, r) -> recipePath(b, r) ?: return false }
-        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = cells.size, video = false)).config
+    /** 네컷 칸마다 넣은 앨범 사진(한 장씩)으로 편집 화면을 연다. 칸 사진은 Cut.composed 로 그대로 칸에 채운다. 촬영 중이면 false. */
+    suspend fun editPicks(picks: List<ai.chaz.sync.AlbumPick>): Boolean {
+        if (capture.model.value.state is AppState.Capturing || picks.isEmpty()) return false
+        if (picks.any { !java.io.File(it.path).exists() }) return false
+        val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = picks.size, video = false)).config
         val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.ALBUM, spotName = spotGuide.placeForSession())
-        val frames = cells.map { (b, r) -> r.roles.mapNotNull { role -> b.photos[role]?.let { ai.chaz.data.Frame(role, it, b.sourceOf(role)) } } }
-        val composed = cells.mapIndexed { i, (_, r) -> paths[i] to r.ai }
-        val cuts = runCatching { sessionStore.saveBundles(session, frames, composed) }.getOrNull() ?: return false
+        val frames = picks.map { p ->
+            when (p) {
+                is ai.chaz.sync.AlbumPick.Photo -> listOf(ai.chaz.data.Frame(p.role, p.path, p.bundle.sourceOf(p.role)))
+                is ai.chaz.sync.AlbumPick.Made -> listOf(ai.chaz.data.Frame(CameraRole.INTERIOR, p.path,
+                    if (p.ai) ai.chaz.capture.SourceKind.AI_GENERATED else ai.chaz.capture.SourceKind.PHONE_CAMERA))
+            }
+        }
+        val cuts = runCatching { sessionStore.saveBundles(session, frames, picks.map { it.path to it.ai }) }.getOrNull() ?: return false
         previewPrefs.value = previewPrefs.value.copy(layout = Layout.CUT_FRAME)
         return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, cuts, emptyList(), stopped = false))
     }
