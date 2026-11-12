@@ -1,8 +1,8 @@
 // 앱 껍데기만 캐시한다 (사진·카메라 프레임은 캐시하지 않음). HTTPS 에서만 등록된다.
 // 네트워크 우선: 서버가 켜져 있으면 항상 최신 app.js, 끊겼을 때만 캐시로 화면을 띄운다.
-const SHELL = 'chaz-shell-v5';
+const SHELL = 'chaz-shell-v6';
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['./', 'index.html', 'app.js', 'style.css', 'icon.svg'])));
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['./', 'index.html', 'app.js', 'style.css', 'icon.svg'].map((u) => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 self.addEventListener('activate', (e) => {
@@ -12,7 +12,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.pathname.startsWith('/sync/') || url.pathname.startsWith('/s/')) return;
   e.respondWith(
-    fetch(e.request)
+    // cache: 'no-cache' — 브라우저 HTTP 캐시의 옛 파일 대신 서버에 바뀌었는지 확인 (index.html·app.js 버전 섞임 방지)
+    fetch(e.request, { cache: 'no-cache' })
       .then((r) => {
         const copy = r.clone();
         caches.open(SHELL).then((c) => c.put(e.request, copy)).catch(() => {});

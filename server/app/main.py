@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 from datetime import date
@@ -42,6 +43,7 @@ app = FastAPI(title="Cha~z Local Server", version="0.2.0")
 
 # 차량 ↔ 폰 동기화 (Supabase 대체, T10) + 폰 컴패니언 PWA (companion-web/)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
+from fastapi.responses import HTMLResponse  # noqa: E402
 
 from . import sync  # noqa: E402
 
@@ -122,7 +124,30 @@ async def _stop_https() -> None:
 
 _PWA = ROOT.parent / "companion-web" / "public"
 _PWA.mkdir(parents=True, exist_ok=True)
+@app.get("/app/", include_in_schema=False)
+@app.get("/app/index.html", include_in_schema=False)
+def _pwa_index():
+    """index.html 의 app.js·style.css 주소에 파일 버전(수정 시각)을 붙여 준다.
+    Cloudflare 가 .js/.css 에 브라우저 4시간 캐시를 강제해서, 주소가 같으면 폰이 옛 app.js 를 계속 쓴다."""
+    html = (_PWA / "index.html").read_text(encoding="utf-8")
+    for name in ("app.js", "style.css"):
+        f = _PWA / name
+        if f.exists():
+            html = re.sub(rf'{re.escape(name)}(\?v=[^"]*)?"', f'{name}?v={int(f.stat().st_mtime)}"', html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
 app.mount("/app", StaticFiles(directory=_PWA, html=True), name="pwa")
+
+
+@app.middleware("http")
+async def _pwa_no_stale(request, call_next):
+    """폰 PWA 파일은 매번 새로 확인하게 한다(ETag 로 바뀐 것만 받음).
+    헤더가 없으면 Cloudflare 가 브라우저에 4시간 캐시를 붙여, 새 화면(index.html)에 옛 app.js 가 섞여 버튼이 안 먹는다."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/app"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 class GenerateRequest(BaseModel):
