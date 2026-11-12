@@ -11,8 +11,8 @@
 | 차량 | GET  /sync/camera/result/{shotId} | 예약한 컷의 JPEG (셔터 시각에 호출, 올 때까지 대기)       |
 | 차량 | POST /sync/camera/shot            | 즉시 촬영 (예약 실패 시 대체): capture.shot → 업로드 → 그 JPEG 를 응답으로 |
 | 폰   | POST /sync/camera/frame (shot)    | shotId 에 해당하는 고해상 프레임                          |
-| 폰   | POST /sync/camera/frame (push)    | 폰 사용자가 직접 셔터 → 차량에 phone.photo 이벤트       |
-| 차량 | GET  /sync/camera/pushed/{photoId}| 폰이 직접 찍어 보낸 사진 (한 번 가져가면 지움, 60초 보관) |
+| 폰   | POST /sync/camera/bundle          | 폰에서 직접 찍은 실내·전방·후방 묶음 → 차량에 phone.bundle 이벤트 |
+| 차량 | GET  /sync/camera/bundle/{id}/{role} | 묶음의 사진 한 장 (가져가면 지움, 묶음은 2분 보관)     |
 | 둘다 | GET  /sync/time                   | 서버 시각(ms) — 차량·폰이 서버 시계에 맞춰 예약 시각을 지킨다 |
 
 예약 촬영이 필요한 이유: Cloudflare 를 거치면 이벤트가 폰에 닿기까지 0.3~1.8초. 셔터 순간에 '찍어'를 보내면
@@ -54,9 +54,10 @@ class _Latest:
 _latest: dict[str, _Latest] = {}                    # carDeviceId → 최신 미리보기
 _shots: dict[str, tuple[str, asyncio.Future, float]] = {}  # shotId → (carDeviceId, 결과, 만든 시각)
 SHOT_TTL_SEC = 30.0
-_shot_at: dict[str, float] = {}
-_pushed: dict[str, tuple[str, bytes, float]] = {}  # photoId → (carDeviceId, JPEG, 받은 시각) — 폰 직접 셔터
-PUSH_TTL_SEC = 60.0  # 예약 촬영 shotId → 셔터 시각(서버 ms), 오차 로그용
+_shot_at: dict[str, float] = {}  # 예약 촬영 shotId → 셔터 시각(서버 ms), 오차 로그용
+_bundles: dict[str, tuple[str, dict[str, bytes], float]] = {}  # bundleId → (carDeviceId, {role: JPEG}, 받은 시각)
+BUNDLE_TTL_SEC = 120.0
+BUNDLE_ROLES = ("INTERIOR", "FRONT", "REAR")
 
 
 def _new_shot(car: str) -> tuple[str, asyncio.Future]:
@@ -83,10 +84,9 @@ def _online(car: str) -> _Latest | None:
 @router.post("/sync/camera/frame")
 async def upload_frame(
     phoneDeviceId: str = Form(..., min_length=8, max_length=64),
-    kind: str = Form(..., pattern="^(preview|shot|push)$"),
+    kind: str = Form(..., pattern="^(preview|shot)$"),
     shotId: str | None = Form(None, max_length=64),
     takenAtMs: float | None = Form(None, description="폰이 실제로 찍은 시각(서버 시계) — 예약 오차 확인용"),
-    role: str = Form("INTERIOR", pattern="^(INTERIOR|FRONT|REAR)$", description="push 전용: 차량 어느 자리(실내·전방·후방) 사진인지"),
     file: UploadFile = File(...),
 ):
     with _db() as con:
@@ -102,8 +102,6 @@ async def upload_frame(
         return {"ok": True}
     if len(data) > MAX_SHOT:
         raise HTTPException(413, "사진이 너무 커요")
-    if kind == "push":
-        return await _push(car, data, role)
     entry = _shots.get(shotId or "")
     if not entry or entry[0] != car:
         raise HTTPException(410, "이미 끝난 촬영이에요")
@@ -116,28 +114,52 @@ async def upload_frame(
     return {"ok": True}
 
 
-async def _push(car: str, data: bytes, role: str) -> dict:
-    """폰에서 직접 셔터를 누른 사진. 차량 앱이 SSE 를 듣고 있으면 phone.photo 로 알리고, 차가 가져가면 지운다."""
+@router.post("/sync/camera/bundle")
+async def camera_bundle(
+    phoneDeviceId: str = Form(..., min_length=8, max_length=64),
+    interior: UploadFile | None = File(None),
+    front: UploadFile | None = File(None),
+    rear: UploadFile | None = File(None),
+):
+    """폰에서 직접 찍은 실내·전방·후방 묶음. 차량이 phone.bundle 을 받아 앨범(갤러리)에 저장한다.
+    얼굴이 담긴 사진이라 메모리에만 두고, 차가 가져가거나 2분이 지나면 지운다."""
+    with _db() as con:
+        car = _car_of(con, phoneDeviceId)
+    if not car:
+        raise HTTPException(404, "연결된 차량이 없어요. 차량 화면의 QR로 먼저 연결해 주세요")
+    photos: dict[str, bytes] = {}
+    for role, f in zip(BUNDLE_ROLES, (interior, front, rear)):
+        if f is None:
+            continue
+        data = await f.read(MAX_SHOT + 1)
+        if len(data) > MAX_SHOT:
+            raise HTTPException(413, "사진이 너무 커요")
+        if data:
+            photos[role] = data
+    if not photos:
+        raise HTTPException(400, "보낼 사진이 없어요")
     now = time.time()
-    for k, v in list(_pushed.items()):
-        if now - v[2] > PUSH_TTL_SEC:
-            _pushed.pop(k, None)
-    if sum(1 for v in _pushed.values() if v[0] == car) >= 5:
-        raise HTTPException(429, "차량이 아직 앞의 사진을 받고 있어요. 잠시 뒤 다시 찍어 주세요")
-    photo_id = secrets.token_urlsafe(9)
-    _pushed[photo_id] = (car, data, now)
+    for k, v in list(_bundles.items()):
+        if now - v[2] > BUNDLE_TTL_SEC:
+            _bundles.pop(k, None)
+    if sum(1 for v in _bundles.values() if v[0] == car) >= 5:
+        raise HTTPException(429, "차량이 아직 앞의 사진을 받고 있어요. 잠시 뒤 다시 보내 주세요")
+    bundle_id = secrets.token_urlsafe(9)
+    _bundles[bundle_id] = (car, photos, now)
     listening = bool(_subscribers.get(car))
-    await publish(car, "phone.photo", {"photoId": photo_id, "role": role, "at": now})
-    return {"ok": True, "delivered": listening}
+    await publish(car, "phone.bundle", {"bundleId": bundle_id, "roles": list(photos), "at": now})
+    return {"ok": True, "delivered": listening, "count": len(photos)}
 
 
-@router.get("/sync/camera/pushed/{photo_id}")
-def camera_pushed(photo_id: str, carDeviceId: str):
-    entry = _pushed.get(photo_id)
-    if not entry or entry[0] != carDeviceId:
+@router.get("/sync/camera/bundle/{bundle_id}/{role}")
+def camera_bundle_photo(bundle_id: str, role: str, carDeviceId: str):
+    entry = _bundles.get(bundle_id)
+    if not entry or entry[0] != carDeviceId or role not in entry[1]:
         raise HTTPException(404, "없는 사진이에요")
-    _pushed.pop(photo_id, None)
-    return Response(entry[1], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    data = entry[1].pop(role)
+    if not entry[1]:
+        _bundles.pop(bundle_id, None)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/sync/camera/status")

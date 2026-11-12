@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class Tab(val label: String, val ready: Boolean, val icon: () -> androidx.compose.ui.graphics.vector.ImageVector) {
-    HOME("촬영", true, { ChazIcons.camera }), GALLERY("갤러리", false, { ChazIcons.gallery }), LIGHT("조명", true, { ChazIcons.light }),
+    HOME("촬영", true, { ChazIcons.camera }), GALLERY("갤러리", true, { ChazIcons.gallery }), LIGHT("조명", true, { ChazIcons.light }),
     SETTINGS("설정", true, { ChazIcons.settings }), SPIKE("점검", true, { ChazIcons.tools }),
 }
 
@@ -70,6 +70,7 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when (tab) {
                         Tab.HOME -> if (state is AppState.Editing) EditScreen(graph) else StandbyScreen(graph)
+                        Tab.GALLERY -> ai.chaz.ui.gallery.GalleryScreen(graph)
                         Tab.SETTINGS -> SettingsScreen(graph)
                         Tab.SPIKE -> SpikeScreen(graph)
                         Tab.LIGHT -> ai.chaz.ui.light.LightScreen(graph)

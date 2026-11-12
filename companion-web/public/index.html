@@ -66,12 +66,17 @@
       <div id="cam-count"></div>
     </div>
     <p id="cam-text" class="sub">폰을 대시보드에 세워 실내가 보이게 놓아 주세요. 화면은 꺼지지 않아요.</p>
-    <div class="row seg" id="push-role" role="radiogroup" aria-label="차량 어느 자리 사진인지">
-      <button data-role="INTERIOR" class="on">실내</button>
-      <button data-role="FRONT">전방</button>
-      <button data-role="REAR">후방</button>
+    <!-- 직접 촬영 묶음: 실내 → 전방 → 후방 3장을 모아 한 번에 차로 (차 갤러리에 앨범으로 저장) -->
+    <div class="trio" id="trio">
+      <button class="slot" data-role="INTERIOR"><img alt=""><span>1 실내</span></button>
+      <button class="slot" data-role="FRONT"><img alt=""><span>2 전방</span></button>
+      <button class="slot" data-role="REAR"><img alt=""><span>3 후방</span></button>
     </div>
-    <button id="cam-shutter" class="primary wide shutter">📸 지금 찍어서 차로 보내기</button>
+    <button id="cam-shutter" class="primary wide shutter">📸 실내 찍기 (1/3)</button>
+    <div class="row">
+      <button id="trio-send" class="primary" disabled>📨 3장 차로 보내기</button>
+      <button id="trio-reset" class="ghost">처음부터</button>
+    </div>
     <div class="row">
       <button id="cam-flip">전면/후면 전환</button>
       <button id="cam-stop" class="ghost">카메라 모드 끝내기</button>

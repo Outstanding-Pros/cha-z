@@ -65,16 +65,19 @@ class FileSessionStore(context: Context) : SessionStore {
     }
 
     /**
-     * 폰에서 직접 찍어 보낸 사진으로 1컷 세션을 만든다. 폰 사진은 폰이 고른 자리(role: 실내·전방·후방)에 넣고,
-     * 나머지 자리는 받은 순간 차 카메라(others)로 같이 찍어 합성 재료로 쓴다. 같은 자리·폰 소스는 빼고 찍는다.
+     * 폰 앨범 묶음에서 자리마다 고른 사진(slots: 자리 → 원본 파일)으로 1컷 세션을 만든다. 원본은 앨범에 남기고 복사한다.
+     * 모두 폰 카메라 사진이라 source = PHONE_CAMERA (실내가 폰이면 L1 창문 마스크는 못 쓴다 — ResultComposer).
      */
-    suspend fun saveImported(session: Session, jpeg: ByteArray, role: CameraRole, others: List<CameraSource>): Cut {
+    suspend fun saveComposite(session: Session, slots: Map<CameraRole, String>): Cut {
         begin(session)
-        val rest = others.filter { it.role != role && it.kind != SourceKind.PHONE_CAMERA }
-        val car = if (rest.isEmpty()) emptyList() else saveCut(session, 1, 0, rest).frames
-        val f = File(dir(session), "cuts/01_${role.name.lowercase()}.jpg")
-        withContext(Dispatchers.IO) { f.writeBytes(jpeg) }
-        val cut = Cut(session.id, 1, 0, (listOf(Frame(role, f.absolutePath, SourceKind.PHONE_CAMERA)) + car).sortedBy { it.role.ordinal })
+        val frames = withContext(Dispatchers.IO) {
+            slots.entries.sortedBy { it.key.ordinal }.map { (role, src) ->
+                val f = File(dir(session), "cuts/01_${role.name.lowercase()}.jpg")
+                File(src).copyTo(f, overwrite = true)
+                Frame(role, f.absolutePath, SourceKind.PHONE_CAMERA)
+            }
+        }
+        val cut = Cut(session.id, 1, 0, frames)
         finish(session, listOf(cut), emptyList(), stopped = false)
         return cut
     }

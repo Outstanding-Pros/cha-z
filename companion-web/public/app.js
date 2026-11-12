@@ -244,55 +244,92 @@
     }
   }
 
-  // 직접 셔터로 보낼 자리: 실내(셀카 쪽 카메라) / 전방·후방(뒷면 카메라로 창밖). 고르면 카메라 방향도 맞춘다.
+  // 직접 촬영 묶음: 실내(셀카 쪽) → 전방 → 후방(뒷면 카메라) 순서로 3장을 모은 뒤 한 번에 보낸다.
+  // 차는 바로 합성하지 않고 갤러리에 묶음(앨범)으로 저장 → 차 화면에서 자리마다 사진을 골라 편집한다.
+  // 칸을 누르면 그 칸만 다시 찍는다.
+  const ROLES = ['INTERIOR', 'FRONT', 'REAR'];
   const ROLE_LABEL = { INTERIOR: '실내', FRONT: '전방', REAR: '후방' };
-  let pushRole = 'INTERIOR';
-  try { pushRole = localStorage.getItem('pushRole') || 'INTERIOR'; } catch (e) { /* 저장소 없음 */ }
-  function setPushRole(role, flip) {
-    pushRole = ROLE_LABEL[role] ? role : 'INTERIOR';
-    try { localStorage.setItem('pushRole', pushRole); } catch (e) { /* 저장소 없음 */ }
-    document.querySelectorAll('#push-role [data-role]').forEach((b) => {
-      b.classList.toggle('on', b.dataset.role === pushRole);
-      b.setAttribute('aria-checked', String(b.dataset.role === pushRole));
+  const trio = { blobs: {}, urls: {}, step: 0, busy: false };
+
+  function trioRender() {
+    document.querySelectorAll('#trio .slot').forEach((el) => {
+      const role = el.dataset.role;
+      const img = el.querySelector('img');
+      if (trio.urls[role]) img.src = trio.urls[role]; else img.removeAttribute('src');
+      el.classList.toggle('now', ROLES[trio.step] === role);
     });
-    $('cam-shutter').textContent = `📸 ${ROLE_LABEL[pushRole]} 사진으로 차에 보내기`;
-    const want = pushRole === 'INTERIOR' ? 'user' : 'environment';
-    if (flip && cam.stream && cam.facing !== want) {
+    const n = ROLES.filter((r) => trio.blobs[r]).length;
+    const role = ROLES[trio.step];
+    const btn = $('cam-shutter');
+    btn.textContent = role ? `📸 ${ROLE_LABEL[role]} 찍기 (${trio.step + 1}/3)` : '✓ 3장 다 찍었어요';
+    btn.disabled = !role || trio.busy;
+    $('trio-send').disabled = n < 3 || trio.busy;
+    $('trio-send').textContent = `📨 ${n}장 차로 보내기`;
+  }
+
+  // 실내 = 전면(셀카), 전방·후방 = 후면 카메라
+  async function trioFace(role) {
+    const want = role === 'INTERIOR' ? 'user' : 'environment';
+    if (cam.stream && cam.facing !== want) {
       cam.facing = want;
-      openStream().catch(() => toast('카메라를 바꾸지 못했어요'));
+      try { await openStream(); } catch (e) { toast('카메라를 바꾸지 못했어요'); }
     }
   }
-  document.querySelectorAll('#push-role [data-role]').forEach((b) => b.addEventListener('click', () => setPushRole(b.dataset.role, true)));
-  setPushRole(pushRole, false);
 
-  // 폰 사용자가 직접 셔터: 고해상 한 장을 찍어 차량으로 보낸다 (차가 그 순간 창밖도 같이 찍어 합성 재료로 쓴다).
-  async function pushShot() {
-    if (!cam.stream) return;
-    const btn = $('cam-shutter');
-    btn.disabled = true;
+  function trioGo(step) {
+    trio.step = step;
+    trioRender();
+    if (ROLES[step]) trioFace(ROLES[step]);
+  }
+
+  function trioReset() {
+    Object.values(trio.urls).forEach((u) => URL.revokeObjectURL(u));
+    trio.blobs = {}; trio.urls = {};
+    trioGo(0);
+  }
+
+  async function trioShot() {
+    const role = ROLES[trio.step];
+    if (!cam.stream || !role || trio.busy) return;
+    const b = await grab(1920, 0.92);
+    if (!b) { toast('카메라가 아직 준비 중이에요'); return; }
+    $('cam-flash').classList.add('on');
+    setTimeout(() => $('cam-flash').classList.remove('on'), 60);
+    if (navigator.vibrate) navigator.vibrate(40);
+    if (trio.urls[role]) URL.revokeObjectURL(trio.urls[role]);
+    trio.blobs[role] = b;
+    trio.urls[role] = URL.createObjectURL(b);
+    const next = ROLES.findIndex((r) => !trio.blobs[r]);
+    trioGo(next === -1 ? ROLES.length : next);
+  }
+
+  async function trioSend() {
+    if (trio.busy || ROLES.some((r) => !trio.blobs[r])) return;
+    trio.busy = true; trioRender();
     try {
-      const b = await grab(1920, 0.92);
-      if (!b) { toast('카메라가 아직 준비 중이에요'); return; }
-      $('cam-flash').classList.add('on');
-      setTimeout(() => $('cam-flash').classList.remove('on'), 60);
-      if (navigator.vibrate) navigator.vibrate(40);
       const f = new FormData();
       f.append('phoneDeviceId', phoneId);
-      f.append('kind', 'push');
-      f.append('role', pushRole);
-      f.append('file', b, 'push.jpg');
-      const res = await fetch('/sync/camera/frame', { method: 'POST', body: f });
+      ROLES.forEach((r) => f.append(r.toLowerCase(), trio.blobs[r], r.toLowerCase() + '.jpg'));
+      const res = await fetch('/sync/camera/bundle', { method: 'POST', body: f });
       let d = {}; try { d = await res.json(); } catch (e) { /* 본문 없음 */ }
       if (!res.ok) throw new Error(d.detail || ('HTTP ' + res.status));
-      cam.shots++;
-      $('cam-count').textContent = `${cam.shots}장 찍음`;
-      toast(d.delivered ? `${ROLE_LABEL[pushRole]} 사진으로 차에 보냈어요` : '차량 앱이 꺼져 있어 전달하지 못했어요');
+      if (!d.delivered) { toast('차량 앱이 꺼져 있어 전달하지 못했어요'); return; }
+      cam.shots += 3;
+      $('cam-count').textContent = `${cam.shots}장 보냄`;
+      toast('3장을 차로 보냈어요. 차 화면 갤러리에서 골라 꾸밀 수 있어요');
+      trioReset();
     } catch (e) {
       toast('보내지 못했어요: ' + e.message);
     } finally {
-      setTimeout(() => { btn.disabled = false; }, 1500); // 연타 방지
+      trio.busy = false; trioRender();
     }
   }
+
+  document.querySelectorAll('#trio .slot').forEach((el) =>
+    el.addEventListener('click', () => trioGo(ROLES.indexOf(el.dataset.role))));
+  $('trio-send').addEventListener('click', trioSend);
+  $('trio-reset').addEventListener('click', trioReset);
+  trioRender();
 
   async function keepAwake() {
     try { if ('wakeLock' in navigator && !cam.wake) cam.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* 지원 안 함 */ }
@@ -341,7 +378,7 @@
 
   $('cam-go').addEventListener('click', camStart);
   $('cam-stop').addEventListener('click', camStop);
-  $('cam-shutter').addEventListener('click', pushShot);
+  $('cam-shutter').addEventListener('click', trioShot);
   $('cam-flip').addEventListener('click', async () => {
     cam.facing = cam.facing === 'user' ? 'environment' : 'user';
     try { await openStream(); } catch (e) { toast('카메라를 바꾸지 못했어요'); }

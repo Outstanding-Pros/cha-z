@@ -27,6 +27,7 @@ PUBLIC_EXACT = {
     ("GET", "/sync/results"),
     ("POST", "/sync/share"),
     ("POST", "/sync/camera/frame"),
+    ("POST", "/sync/camera/bundle"),  # 폰 직접 촬영 묶음 — 연결된 폰 id 로만 자기 차량에 전달
     ("POST", "/sync/voice"),  # 폰 음성 리모컨 — 연결된 폰 id 로만 자기 차량에 전달
 }
 AI_PATHS = ("/frames/generate", "/frames/opentop", "/voice/tts", "/voice/stt", "/intent/parse")

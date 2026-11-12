@@ -26,10 +26,7 @@ class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
     override fun stopped() = res.getString(R.string.tts_stopped)
     fun albumArrived(n: Int) = res.getString(R.string.tts_album_arrived, n)
     fun albumSent(n: Int) = res.getString(R.string.tts_album_sent, n)
-    fun phonePhoto(role: ai.chaz.capture.CameraRole, driving: Boolean) = res.getString(
-        if (driving) R.string.tts_phone_photo_driving else R.string.tts_phone_photo,
-        when (role) { ai.chaz.capture.CameraRole.FRONT -> "전방"; ai.chaz.capture.CameraRole.REAR -> "후방"; else -> "실내" },
-    )
+    fun phoneBundle(n: Int) = res.getString(R.string.tts_phone_bundle, n)
     override fun help() = res.getString(R.string.tts_help)
     override fun unknown() = res.getString(R.string.tts_unknown)
     override fun bgmNotReady() = res.getString(R.string.tts_bgm_not_ready)

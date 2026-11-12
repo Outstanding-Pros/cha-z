@@ -79,7 +79,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -115,6 +114,9 @@ class AppGraph(context: Context) {
     private val cues by lazy { SoundPoolCuePlayer(appContext) }
 
     private val sessionStore by lazy { FileSessionStore(appContext) }
+
+    /** 폰 직접 촬영 묶음 앨범 (갤러리 탭). */
+    val phoneAlbum by lazy { ai.chaz.sync.PhoneAlbumStore(appContext) }
 
     val capture by lazy {
         CaptureController(
@@ -481,10 +483,11 @@ class AppGraph(context: Context) {
         reprobe()
         watchPhoneCamera()
         // 폰 음성 리모컨: 폰에서 말한 문장을 차 마이크로 들은 것처럼 처리 (버튼을 눌렀으니 호출어는 생략)
-        // 폰 직접 셔터: 폰이 찍어 보낸 사진을 1컷 세션으로 받아 편집 화면에 띄운다
+        // 폰 직접 촬영 묶음: 바로 합성하지 않고 갤러리(폰 앨범)에 저장 → 사용자가 자리마다 골라 편집
+        scope.launch { phoneAlbum.load() }
         phone.listen(
             onVoice = { text -> voice.handleText(text, requireWake = false) },
-            onPhoto = { id, role -> onPhonePhoto(id, role) },
+            onBundle = { id, roles -> onPhoneBundle(id, roles) },
         )
         scope.launch {
             driving.restricted.collect { capture.dispatch(AppEvent.DrivingChanged(it)) }
@@ -547,24 +550,30 @@ class AppGraph(context: Context) {
         android.util.Log.i("ChazCamera", "소스: " + fresh.joinToString { "${it.role}=${it.label}" })
     }
 
+    /** 폰 직접 촬영 묶음 도착: 사진을 받아 앨범에 저장만 한다(편집 화면으로 넘기지 않음). */
+    private suspend fun onPhoneBundle(bundleId: String, roleNames: List<String>) {
+        val photos = ai.chaz.sync.PhoneAlbum.parseRoles(roleNames)
+            .mapNotNull { r -> phone.fetchBundlePhoto(bundleId, r.name)?.let { r to it } }.toMap()
+        if (photos.isEmpty()) return
+        val saved = runCatching { phoneAlbum.save(newSessionId(), photos) }
+            .onFailure { android.util.Log.w("ChazPhone", "폰 묶음 저장 실패: ${it.javaClass.simpleName}") }.getOrNull() ?: return
+        android.util.Log.i("ChazPhone", "폰 묶음 받음 ${saved.photos.size}장")
+        if (capture.model.value.state !is AppState.Capturing) runCatching { speech.speak(phrases.phoneBundle(saved.photos.size)) }
+    }
+
     /**
-     * 폰 직접 셔터로 온 사진. 먼저 받아 두고(서버는 60초만 보관), 차가 촬영 중이면 끝날 때까지 기다렸다가 넣는다.
-     * 폰이 고른 자리(실내·전방·후방)에 넣고, 나머지 자리는 받은 순간 차 카메라로 같이 찍는다.
-     * 주행 중이면 저장만(편집 잠금) — 상태 머신이 정한다.
+     * 갤러리에서 묶음의 사진을 자리마다 골라 편집으로. 정차 중이면 편집 화면, 주행 중이면 저장(편집 잠금) — 상태 머신.
+     * 차가 촬영 중이면 false.
      */
-    private suspend fun onPhonePhoto(photoId: String, roleName: String) {
-        val role = when (roleName) { "FRONT" -> CameraRole.FRONT; "REAR" -> CameraRole.REAR; else -> CameraRole.INTERIOR }
-        val jpeg = phone.fetchPushed(photoId) ?: return
-        capture.model.first { it.state !is AppState.Capturing }
+    suspend fun editPhoneBundle(bundle: ai.chaz.sync.PhoneBundle, slots: Map<CameraRole, CameraRole?>): Boolean {
+        if (capture.model.value.state is AppState.Capturing) return false
+        val files = ai.chaz.sync.PhoneAlbum.resolve(bundle, slots)
+        if (files.isEmpty()) return false
         val config = ai.chaz.data.CaptureRules.normalize(ai.chaz.data.CaptureConfig(durationSec = 4, count = 1)).config
         val session = Session(newSessionId(), System.currentTimeMillis(), config, ai.chaz.data.TriggerSource.PHONE_SHUTTER,
             spotName = spotGuide.placeForSession())
-        val cut = runCatching { sessionStore.saveImported(session, jpeg, role, _cameras.value) }
-            .onFailure { android.util.Log.w("ChazPhone", "폰 사진 저장 실패: ${it.javaClass.simpleName}") }.getOrNull() ?: return
-        android.util.Log.i("ChazPhone", "폰 직접 셔터 사진 받음 (자리 $role, 차 카메라 ${cut.frames.size - 1}장)")
-        if (capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, listOf(cut), emptyList(), stopped = false))) {
-            runCatching { speech.speak(phrases.phonePhoto(role, driving.restricted.value)) }
-        }
+        val cut = runCatching { sessionStore.saveComposite(session, files) }.getOrNull() ?: return false
+        return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, listOf(cut), emptyList(), stopped = false))
     }
 
     private fun newSessionId(): String =

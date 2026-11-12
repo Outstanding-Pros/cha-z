@@ -48,11 +48,11 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
     private var events: Job? = null
 
     /**
-     * 서버 이벤트(SSE /sync/events?deviceId=차량) 구독. 폰 음성 리모컨(voice.command)·폰 직접 셔터(phone.photo)·페어링 수락을 받는다.
+     * 서버 이벤트(SSE /sync/events?deviceId=차량) 구독. 폰 음성 리모컨(voice.command)·폰 직접 촬영 묶음(phone.bundle)·페어링 수락을 받는다.
      * 끊기면 3초 뒤 다시 붙는다. 문장 내용은 로그에 남기지 않는다.
      */
-    /** onPhoto(photoId, role): role 은 폰이 고른 자리 — "INTERIOR" | "FRONT" | "REAR". */
-    fun listen(onVoice: suspend (String) -> Unit, onPhoto: suspend (String, String) -> Unit = { _, _ -> }) {
+    /** onBundle(bundleId, roles): roles 는 묶음에 든 자리 이름 — "INTERIOR" | "FRONT" | "REAR". */
+    fun listen(onVoice: suspend (String) -> Unit, onBundle: suspend (String, List<String>) -> Unit = { _, _ -> }) {
         if (events?.isActive == true) return
         events = scope.launch(Dispatchers.IO) {
             while (isActive) {
@@ -79,9 +79,11 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
                                                     Log.i("ChazPhone", "폰 음성 명령 ${t.length}자")
                                                     scope.launch { onVoice(t) }
                                                 }
-                                            "phone.photo" -> runCatching { JSONObject(d) }.getOrNull()
-                                                ?.let { j -> j.optString("photoId").takeIf { it.isNotBlank() }?.let { id -> id to j.optString("role", "INTERIOR") } }
-                                                ?.let { (id, role) -> scope.launch { onPhoto(id, role) } }
+                                            "phone.bundle" -> runCatching {
+                                                val j = JSONObject(d)
+                                                val roles = j.getJSONArray("roles").let { a -> (0 until a.length()).map { a.getString(it) } }
+                                                j.getString("bundleId") to roles
+                                            }.getOrNull()?.let { (id, roles) -> scope.launch { onBundle(id, roles) } }
                                             "pairing.claimed" -> scope.launch { refresh() }
                                         }
                                     }
@@ -97,10 +99,10 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
         }
     }
 
-    /** 폰이 직접 찍어 보낸 사진(JPEG). 서버는 한 번 가져가면 지운다. 없거나 실패하면 null. */
-    suspend fun fetchPushed(photoId: String): ByteArray? = withContext(Dispatchers.IO) {
+    /** 폰 묶음의 사진 한 장(JPEG). 서버는 가져가면 지운다. 없거나 실패하면 null. */
+    suspend fun fetchBundlePhoto(bundleId: String, role: String): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
-            val conn = ServerHttp.open("$baseUrl/sync/camera/pushed/$photoId?carDeviceId=$carId").apply {
+            val conn = ServerHttp.open("$baseUrl/sync/camera/bundle/$bundleId/$role?carDeviceId=$carId").apply {
                 connectTimeout = 3_000; readTimeout = 10_000
             }
             try {
