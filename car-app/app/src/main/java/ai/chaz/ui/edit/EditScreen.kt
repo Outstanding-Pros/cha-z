@@ -83,6 +83,9 @@ fun EditScreen(graph: AppGraph) {
         if (layout != Layout.CUT_FRAME) cuts.filter { it.index == single }
         else cuts.filter { it.index in multi }.sortedBy { it.index }
     val scope = rememberCoroutineScope()
+    // ✨ AI 오픈카는 얼굴이 나온 사진을 외부 AI 로 보낸다 → 처음 한 번 동의 (기획서 '얼굴 합성은 동의한 경우에만')
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var askConsent by remember { mutableStateOf(false) }
     val phone by graph.phone.state.collectAsState()
     var pairing by remember { mutableStateOf(false) }
     var sendAfterPair by remember { mutableStateOf(false) }
@@ -180,8 +183,13 @@ fun EditScreen(graph: AppGraph) {
                 FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME, Layout.ROUTE_OVERLAY).forEach { l ->
                         val ok = composer.available(l, cuts)
-                        Chip("${l.id} ${l.label}" + if (ok) "" else " (폰 촬영 불가)".takeIf { l == Layout.WINDOW_SWAP && composer.available(l) } ?: " (불가)", selected = layout == l) { if (ok) layout = l }
+                        // 패널 폭(420dp)에 세 칩이 한 줄로 들어가게 짧은 이름
+                        val short = when (l) { Layout.WINDOW_SWAP -> "오픈카"; Layout.CUT_FRAME -> "네컷"; Layout.ROUTE_OVERLAY -> "경로"; else -> l.label }
+                        Chip("${l.id} $short", selected = layout == l, enabled = ok) { layout = l }
                     }
+                }
+                if (composer.available(Layout.WINDOW_SWAP) && !composer.available(Layout.WINDOW_SWAP, cuts)) {
+                    Text("폰 카메라로 찍은 컷은 L1을 쓸 수 없어요. 오픈카는 아래 ✨ AI 오픈카로 만들 수 있어요.", color = Tokens.warn, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
                 Text(
                     if (layout == Layout.WINDOW_SWAP) "지붕을 열어요 — 좌석과 사람만 남기고 위쪽을 같은 순간의 바깥 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
@@ -217,7 +225,11 @@ fun EditScreen(graph: AppGraph) {
                         icon = ai.chaz.ui.ChazIcons.sparkle,
                     ) {
                         if (aiBusy || busy) return@Chip
-                        if (showAi) showAi = false else scope.launch { runAi() }
+                        when {
+                            showAi -> showAi = false
+                            !ai.chaz.sync.AiConsent.given(ctx) -> askConsent = true
+                            else -> scope.launch { runAi() }
+                        }
                     }
                 }
                 Text(
@@ -270,6 +282,31 @@ fun EditScreen(graph: AppGraph) {
                 }
             }
         }
+    }
+    if (askConsent) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { askConsent = false },
+            containerColor = Tokens.surface,
+            title = { Text("AI 오픈카 사용 동의", color = Tokens.text, fontSize = 24.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "고른 컷 1장(얼굴 포함)이 차~즈 서버를 거쳐 AI 서비스(Google Gemini)로 전송되고, 오픈카 사진으로 다시 그려져요.\n\n" +
+                        "• 서버는 보낸 사진을 저장하지 않아요\n" +
+                        "• 결과물에는 'AI 편집' 표시가 남아요\n" +
+                        "• 사진에 나온 모든 사람이 동의한 경우에만 사용해 주세요\n\n" +
+                        "동의는 설정 → AI 편집에서 언제든 철회할 수 있어요.",
+                    color = Tokens.text2, fontSize = 18.sp, lineHeight = 27.sp,
+                )
+            },
+            confirmButton = {
+                ai.chaz.ui.PrimaryButton("동의하고 만들기", icon = ai.chaz.ui.ChazIcons.sparkle, color = Tokens.ai) {
+                    ai.chaz.sync.AiConsent.set(ctx, true)
+                    askConsent = false
+                    scope.launch { runAi() }
+                }
+            },
+            dismissButton = { Chip("동의 안 함", selected = false) { askConsent = false } },
+        )
     }
 }
 

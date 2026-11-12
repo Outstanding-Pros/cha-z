@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,6 +81,18 @@ fun SettingsScreen(graph: AppGraph) {
                     color = Tokens.text2, fontSize = 15.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 10.dp),
                 )
                 album.last?.let { Text(it, color = Tokens.ok, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp)) }
+            }
+        }
+        item {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var consent by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(ai.chaz.sync.AiConsent.given(ctx)) }
+            Card(title = "AI 편집") {
+                Text(
+                    if (consent) "✨ AI 오픈카 사용에 동의했어요. 고른 컷(얼굴 포함)이 AI 서비스(Google Gemini)로 전송돼요."
+                    else "동의하지 않았어요. ✨ AI 오픈카를 처음 누를 때 동의를 받아요.",
+                    color = Tokens.text2, fontSize = 15.sp, lineHeight = 22.sp,
+                )
+                if (consent) Chip("동의 철회", selected = false, modifier = Modifier.padding(top = 10.dp)) { ai.chaz.sync.AiConsent.set(ctx, false); consent = false }
             }
         }
         item {
