@@ -34,6 +34,28 @@ data class PhoneBundle(
     val interiorByPhone: Boolean get() = photos.containsKey(CameraRole.INTERIOR) && sourceOf(CameraRole.INTERIOR) == SourceKind.PHONE_CAMERA
 }
 
+/**
+ * 네컷 칸 하나에 넣을 사진 조합. 한 자리는 그 사진 그대로, 두 자리(실내+전방/후방)는 AI 로 섞는다(서버 /frames/mix).
+ */
+enum class CutRecipe(val label: String, val roles: List<CameraRole>) {
+    INTERIOR("실내", listOf(CameraRole.INTERIOR)),
+    FRONT("전방", listOf(CameraRole.FRONT)),
+    REAR("후방", listOf(CameraRole.REAR)),
+    INTERIOR_FRONT("실내+전방", listOf(CameraRole.INTERIOR, CameraRole.FRONT)),
+    INTERIOR_REAR("실내+후방", listOf(CameraRole.INTERIOR, CameraRole.REAR)),
+    ;
+    val ai: Boolean get() = roles.size > 1
+    /** 묶음에 필요한 사진이 다 있나. */
+    fun fits(b: PhoneBundle): Boolean = roles.all { b.photos.containsKey(it) }
+    /** AI 로 섞을 때 배경이 되는 바깥 자리. */
+    val view: CameraRole? get() = roles.getOrNull(1)
+
+    companion object {
+        /** 묶음을 칸에 처음 넣을 때: AI 없이 쓸 수 있는 첫 조합(보통 실내). 비용이 드는 AI 조합은 사용자가 직접 고른다. */
+        fun default(b: PhoneBundle): CutRecipe = entries.firstOrNull { !it.ai && it.fits(b) } ?: INTERIOR
+    }
+}
+
 /** 동영상 촬영의 12초 영상. clips: 자리 → 0.5초 스냅샷 폴더(0000.jpg…). */
 data class AlbumVideo(val id: String, val group: String, val at: Long, val durationMs: Long, val clips: Map<CameraRole, String>, val frameCount: Int)
 
@@ -137,6 +159,9 @@ class PhoneAlbumStore(context: Context) {
         _bundles.value = (saved + _bundles.value.filter { b -> saved.none { it.id == b.id } }).sortedWith(ORDER)
         saved
     }
+
+    /** AI 조합 결과 파일 (묶음 폴더 안, 묶음을 지우면 같이 지워진다). */
+    fun mixFile(b: PhoneBundle, r: CutRecipe): File = File(File(root, b.id), "mix_${r.name.lowercase()}.jpg")
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         File(root, id).deleteRecursively()

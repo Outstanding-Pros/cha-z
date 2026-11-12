@@ -15,9 +15,16 @@ class AiOpenTopClient(private val baseUrl: String, private val timeoutMs: Int = 
 
     class Failed(message: String) : Exception(message)
 
-    suspend fun open(interior: Bitmap, exterior: Bitmap?): Bitmap = withContext(Dispatchers.IO) {
+    suspend fun open(interior: Bitmap, exterior: Bitmap?): Bitmap =
+        post("/frames/opentop", listOfNotNull("interior" to (interior to 1600), exterior?.let { "exterior" to (it to 1024) }), emptyMap(), "AI 편집에 실패했어요")
+
+    /** 🎞 AI 네컷 조합 (POST /frames/mix): 실내 사진 + 같은 순간 전방/후방 풍경 → 한 장. view = "FRONT" | "REAR". */
+    suspend fun mix(interior: Bitmap, exterior: Bitmap, view: String): Bitmap =
+        post("/frames/mix", listOf("interior" to (interior to 1600), "exterior" to (exterior to 1280)), mapOf("view" to view), "AI 조합에 실패했어요")
+
+    private suspend fun post(path: String, images: List<Pair<String, Pair<Bitmap, Int>>>, fields: Map<String, String>, failText: String): Bitmap = withContext(Dispatchers.IO) {
         val boundary = "chaz" + System.nanoTime()
-        val conn = ServerHttp.open("$baseUrl/frames/opentop").apply {
+        val conn = ServerHttp.open("$baseUrl$path").apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 10_000
@@ -31,14 +38,14 @@ class AiOpenTopClient(private val baseUrl: String, private val timeoutMs: Int = 
                     out.write(jpeg(bmp, maxSide))
                     out.writeBytes("\r\n")
                 }
-                part("interior", interior, 1600)
-                exterior?.let { part("exterior", it, 1024) }
+                fields.forEach { (k, v) -> out.writeBytes("--$boundary\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n$v\r\n") }
+                images.forEach { (name, img) -> part(name, img.first, img.second) }
                 out.writeBytes("--$boundary--\r\n")
             }
             when (val code = conn.responseCode) {
                 200 -> conn.inputStream.use { BitmapFactory.decodeStream(it) } ?: throw Failed("결과 이미지를 읽지 못했어요")
                 429 -> throw Failed("오늘 AI 사용량을 다 썼어요")
-                else -> throw Failed("AI 편집에 실패했어요 ($code)")
+                else -> throw Failed("$failText ($code)")
             }
         } catch (e: java.net.SocketTimeoutException) {
             throw Failed("AI 응답이 너무 늦어요")

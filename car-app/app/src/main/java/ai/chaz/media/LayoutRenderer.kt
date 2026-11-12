@@ -55,7 +55,7 @@ data class RenderOptions(
 }
 
 /** 한 시각의 실내·전방·후방 이미지 (라이브 미리보기 또는 저장된 컷). */
-data class CutImages(val index: Int, val interior: Bitmap?, val front: Bitmap?, val rear: Bitmap?) {
+data class CutImages(val index: Int, val interior: Bitmap?, val front: Bitmap?, val rear: Bitmap?, val composed: Bitmap? = null) {
     fun exterior(role: CameraRole): Bitmap? = when (role) {
         CameraRole.REAR -> rear ?: front
         else -> front ?: rear
@@ -66,7 +66,8 @@ data class CutImages(val index: Int, val interior: Bitmap?, val front: Bitmap?, 
             fun read(role: CameraRole) = cut.frames.firstOrNull { it.role == role }?.path?.let { p ->
                 BitmapFactory.decodeFile(p, BitmapFactory.Options().apply { inSampleSize = sampleSize })
             }
-            return CutImages(cut.index, read(CameraRole.INTERIOR), read(CameraRole.FRONT), read(CameraRole.REAR))
+            val composed = cut.composed?.let { p -> BitmapFactory.decodeFile(p, BitmapFactory.Options().apply { inSampleSize = sampleSize }) }
+            return CutImages(cut.index, read(CameraRole.INTERIOR), read(CameraRole.FRONT), read(CameraRole.REAR), composed)
         }
     }
 }

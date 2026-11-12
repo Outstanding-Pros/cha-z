@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env", override=True)
 
-from fastapi import File, UploadFile  # noqa: E402
+from fastapi import File, Form, UploadFile  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 
 from . import frames, intent, prompts, providers, voice  # noqa: E402  (.env 로드 후 import)
@@ -305,6 +305,45 @@ async def frames_opentop(interior: UploadFile = File(...), exterior: UploadFile 
     sec = round(time.time() - t0, 1)
     jpg = _jpeg(out, 2048)
     log.info("opentop %.1fs in=%d ext=%s out=%d", sec, len(raw), len(images) > 1, len(jpg))
+    return Response(jpg, media_type="image/jpeg", headers={"X-Seconds": str(sec), "X-Model": model, "Cache-Control": "no-store"})
+
+
+@app.post("/frames/mix")
+async def frames_mix(interior: UploadFile = File(...), exterior: UploadFile = File(...), view: str = Form("FRONT")):
+    """🎞 AI 네컷 조합: 실내 사진 + 같은 순간 전방/후방 풍경 → 한 장(JPEG). 얼굴 사진이라 저장하지 않고 로그엔 크기·시간만."""
+    import asyncio as _aio
+    import io as _io
+
+    from PIL import Image as _Image
+
+    def _jpeg(raw: bytes, max_side: int) -> bytes:
+        try:
+            im = _Image.open(_io.BytesIO(raw)).convert("RGB")
+        except Exception:
+            raise HTTPException(400, "이미지를 읽을 수 없어요")
+        im.thumbnail((max_side, max_side))
+        buf = _io.BytesIO()
+        im.save(buf, "JPEG", quality=90)
+        return buf.getvalue()
+
+    if view not in prompts.MIX_VIEW:
+        raise HTTPException(400, "view 는 FRONT 또는 REAR")
+    raw, ext = await interior.read(), await exterior.read()
+    for b in (raw, ext):
+        if not b or len(b) > 8 * 1024 * 1024:
+            raise HTTPException(413 if b else 400, "사진은 8MB 이하")
+    images = [_jpeg(raw, 1600), _jpeg(ext, 1280)]
+    prompt = prompts.MIX_PROMPT.format(view=prompts.MIX_VIEW[view])
+    model = os.getenv("MIX_MODEL", os.getenv("OPENTOP_MODEL", "google/gemini-3.1-flash-image"))
+    t0 = time.time()
+    try:
+        out = await _aio.to_thread(providers.edit_chat_api, prompt, images, model)
+    except providers.ImageGenError as e:
+        log.warning("mix failed: %s", str(e)[:200])
+        raise HTTPException(502, "AI 조합에 실패했어요")
+    sec = round(time.time() - t0, 1)
+    jpg = _jpeg(out, 2048)
+    log.info("mix %s %.1fs out=%d", view, sec, len(jpg))
     return Response(jpg, media_type="image/jpeg", headers={"X-Seconds": str(sec), "X-Model": model, "Cache-Control": "no-store"})
 
 

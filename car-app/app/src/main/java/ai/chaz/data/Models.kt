@@ -59,7 +59,13 @@ enum class SessionStatus { RAW, EDITED, DELIVERED }
 data class Frame(val role: CameraRole, val path: String, val source: SourceKind)
 
 /** 같은 시각의 실내·전방·후방(·측면) 프레임. tMs 는 녹화 시작(t=0) 기준. */
-data class Cut(val sessionId: String, val index: Int, val tMs: Long, val frames: List<Frame>)
+data class Cut(
+    val sessionId: String, val index: Int, val tMs: Long, val frames: List<Frame>,
+    /** 칸에 그대로 넣을 완성 사진 (편집 탭 네컷 조합: 실내·전방·후방 한 장 또는 AI 로 섞은 사진). 있으면 렌더러가 합성하지 않는다. */
+    val composed: String? = null,
+    /** composed 가 AI 로 만든 사진인가 ('AI 생성 포함' 표기). */
+    val composedAi: Boolean = false,
+)
 
 /** 영상 클립. 동시 녹화가 안 되는 환경이라 지금은 0.5초 간격 스냅샷 시퀀스 폴더(path)다 (SPEC F1). */
 data class Clip(val sessionId: String, val role: CameraRole, val source: SourceKind, val path: String, val durationMs: Long, val frameCount: Int)

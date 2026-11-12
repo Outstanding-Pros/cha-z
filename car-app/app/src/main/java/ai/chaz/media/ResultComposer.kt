@@ -82,7 +82,8 @@ class ResultComposer(
 
     suspend fun options(result: CaptureSessionEngine.Result, frameColor: FrameColor, showStamp: Boolean, filter: ColorPreset = ColorPreset.ORIGINAL): RenderOptions {
         val v = vehicle()
-        val kinds = (result.cuts.flatMap { c -> c.frames.map { it.source } }).toSet()
+        val kinds = (result.cuts.flatMap { c -> c.frames.map { it.source } }).toSet() +
+            (if (result.cuts.any { it.composedAi }) setOf(SourceKind.AI_GENERATED) else emptySet())
         return RenderOptions(
             stamp = StampInfo(
                 place = result.session.spotName,

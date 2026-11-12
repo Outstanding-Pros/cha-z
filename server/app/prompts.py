@@ -64,4 +64,15 @@ OPENTOP_PROMPT = (
 OPENTOP_SCENERY_FROM_IMAGE = (
     "Behind the car, use the scenery from the second image (a view from the back of this same car at the same moment)."
 )
+# 🎞 AI 네컷 조합 (POST /frames/mix). 실내 사진의 사람들 + 같은 순간 차 밖(전방/후방) 풍경을 한 장으로.
+MIX_PROMPT = (
+    "Combine these two photos taken at the same moment on a road trip into one natural photo. "
+    "Image 1 is the inside of the car with the people. Image 2 is the view {view} of the same car. "
+    "Keep every person from image 1 exactly as they are — identical face, expression, hair, pose and clothes. "
+    "Do not add, remove or beautify anyone. Place them so the scenery from image 2 fills the background, "
+    "as if the photo was taken with that view right behind them; a hint of the car (seat backs, door or window frame) may remain. "
+    "Match the light and colour of the people to the scenery, with consistent shadows. "
+    "Candid film-photo look, landscape 16:9 framing."
+)
+MIX_VIEW = {"FRONT": "out of the front windshield (the road ahead)", "REAR": "out of the back of the car (the road behind)"}
 OPENTOP_SCENERY_DEFAULT = "Behind the car: a coastal road with the sea on one side and green hills on the other."

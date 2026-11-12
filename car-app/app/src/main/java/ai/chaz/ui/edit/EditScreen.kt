@@ -67,6 +67,8 @@ fun EditScreen(graph: AppGraph) {
     val composer = graph.composer
     val cuts = r.cuts
     val prefs = graph.previewPrefs.value
+    // 편집 탭에서 프레임을 먼저 골라 만든 세션은 그 프레임으로 고정 (프레임마다 따로 만든 칸 구성이라)
+    val locked = r.session.trigger == TriggerSource.ALBUM
     var layout by remember(r) {
         mutableStateOf(prefs.layout?.takeIf { composer.available(it, cuts) } ?: if (composer.available(Layout.WINDOW_SWAP, cuts)) Layout.WINDOW_SWAP else Layout.CUT_FRAME)
     }
@@ -188,7 +190,7 @@ fun EditScreen(graph: AppGraph) {
             Card(Modifier.width(420.dp).fillMaxHeight(), title = "셀렉·편집") {
                 ai.chaz.ui.SectionLabel("레이아웃")
                 FlowRow(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME, Layout.ROUTE_OVERLAY).forEach { l ->
+                    listOf(Layout.WINDOW_SWAP, Layout.CUT_FRAME, Layout.ROUTE_OVERLAY).filter { !locked || it == layout }.forEach { l ->
                         val ok = composer.available(l, cuts)
                         // 패널 폭(420dp)에 세 칩이 한 줄로 들어가게 짧은 이름
                         val short = when (l) { Layout.WINDOW_SWAP -> "오픈카"; Layout.CUT_FRAME -> "네컷"; Layout.ROUTE_OVERLAY -> "경로"; else -> l.label }
@@ -199,7 +201,8 @@ fun EditScreen(graph: AppGraph) {
                     Text("폰 카메라로 찍은 컷은 L1을 쓸 수 없어요. 오픈카는 아래 ✨ AI 오픈카로 만들 수 있어요.", color = Tokens.warn, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
                 Text(
-                    if (layout == Layout.WINDOW_SWAP) "지붕을 열어요 — 좌석과 사람만 남기고 위쪽을 같은 순간의 바깥 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
+                    if (locked) "편집 탭에서 고른 프레임이에요. 다른 프레임은 편집 탭에서 다시 골라 주세요."
+                    else if (layout == Layout.WINDOW_SWAP) "지붕을 열어요 — 좌석과 사람만 남기고 위쪽을 같은 순간의 바깥 풍경으로 바꿔요. 아래에서 컷 1장을 고르세요."
                     else if (layout == Layout.ROUTE_OVERLAY) "전방 풍경 위에 오늘 달린 길과 다음 목적지를 얹어요. 인물은 동그란 사진으로. 아래에서 컷 1장을 고르세요."
                     else "풍경을 배경으로 인물을 오려 2~4칸에 담아요. 아래에서 컷을 2~4장 고르세요.",
                     color = Tokens.text2, fontSize = 14.sp, lineHeight = 20.sp,
@@ -321,7 +324,7 @@ fun EditScreen(graph: AppGraph) {
 
 @Composable
 private fun CutThumb(cut: Cut, selected: Boolean, onClick: () -> Unit) {
-    val path = cut.frames.firstOrNull { it.role == CameraRole.INTERIOR }?.path ?: cut.frames.firstOrNull()?.path
+    val path = cut.composed ?: cut.frames.firstOrNull { it.role == CameraRole.INTERIOR }?.path ?: cut.frames.firstOrNull()?.path
     val img by produceState<ImageBitmap?>(null, path) {
         value = path?.let { p -> withContext(Dispatchers.IO) { BitmapFactory.decodeFile(p, BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap() } }
     }

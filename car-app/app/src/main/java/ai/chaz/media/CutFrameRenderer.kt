@@ -29,7 +29,7 @@ class CutFrameRenderer(private val segmenter: PersonSegmenter) : LayoutRenderer 
 
     override suspend fun render(cuts: List<CutImages>, opts: RenderOptions, scale: Float): Bitmap {
         require(cuts.isNotEmpty()) { "컷을 하나 이상 골라 주세요" }
-        val masks = cuts.map { c -> c.interior?.let { segmenter.segment(it) } }
+        val masks = cuts.map { c -> if (c.composed != null) null else c.interior?.let { segmenter.segment(it) } }
         return withContext(Dispatchers.Default) {
             val s = scale
             val c = opts.frameColor
@@ -70,6 +70,14 @@ class CutFrameRenderer(private val segmenter: PersonSegmenter) : LayoutRenderer 
         // 칸 내용을 필터 레이어에 그린다 (프레임 색은 필터를 받지 않게)
         cv.saveLayer(cell, Paint().apply { colorFilter = opts.filter.colorFilter() })
         cv.clipPath(Path().apply { addRoundRect(cell, radius, radius, Path.Direction.CW) })
+        cut.composed?.let { done ->
+            // 편집 탭 조합: 고른 사진(또는 AI 로 섞은 사진)을 칸에 그대로 — 필름 톤(비네팅·입자)만 입힌다
+            Draw.drawCover(cv, done, cell, 0.45f)
+            Draw.vignette(cv, cell, 0.5f)
+            Draw.grain(cv, cell, s)
+            cv.restore()
+            return
+        }
         val bg = if (i % 2 == 0) (cut.front ?: cut.rear) else (cut.rear ?: cut.front)
         val interior = cut.interior
         val person = interior != null && mask != null && mask.right > mask.left && mask.bottom > mask.top

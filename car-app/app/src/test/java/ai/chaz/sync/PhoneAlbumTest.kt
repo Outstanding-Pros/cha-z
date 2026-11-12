@@ -58,6 +58,18 @@ class PhoneAlbumTest {
         assertEquals(Layout.ROUTE_OVERLAY to listOf(one), PhoneAlbum.draftFor(listOf(one), Layout.ROUTE_OVERLAY))
     }
 
+    @Test fun `네컷 조합 - 한 자리는 그대로, 실내+바깥은 AI, 없는 사진 조합은 못 고름`() {
+        assertEquals(false, CutRecipe.FRONT.ai)
+        assertEquals(true, CutRecipe.INTERIOR_REAR.ai)
+        assertEquals(CameraRole.REAR, CutRecipe.INTERIOR_REAR.view)
+        val noRear = a.copy(photos = a.photos - CameraRole.REAR)
+        assertEquals(false, CutRecipe.INTERIOR_REAR.fits(noRear))
+        assertEquals(true, CutRecipe.INTERIOR_FRONT.fits(noRear))
+        // 처음 넣을 때는 비용 없는 조합 (실내 없으면 전방)
+        assertEquals(CutRecipe.INTERIOR, CutRecipe.default(a))
+        assertEquals(CutRecipe.FRONT, CutRecipe.default(a.copy(photos = a.photos - CameraRole.INTERIOR)))
+    }
+
     @Test fun `서버 roles 는 아는 자리만`() {
         assertEquals(listOf(CameraRole.INTERIOR, CameraRole.REAR), PhoneAlbum.parseRoles(listOf("INTERIOR", "LEFT", "x", "REAR", "REAR")))
     }

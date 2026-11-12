@@ -68,7 +68,7 @@ class FileSessionStore(context: Context) : SessionStore {
      * 앨범 묶음들로 세션을 만든다. 묶음 하나 = 컷 하나(실내·전방·후방 프레임), 넣은 순서대로 1번 컷부터.
      * 원본은 앨범에 남기고 복사한다. source 는 묶음이 기억한 카메라 종류 그대로 (실내가 폰이면 L1 창문 마스크 불가 — ResultComposer).
      */
-    suspend fun saveBundles(session: Session, bundles: List<List<Frame>>): List<Cut> {
+    suspend fun saveBundles(session: Session, bundles: List<List<Frame>>, composed: List<Pair<String, Boolean>?> = emptyList()): List<Cut> {
         begin(session)
         val cuts = withContext(Dispatchers.IO) {
             bundles.mapIndexed { i, src ->
@@ -78,7 +78,11 @@ class FileSessionStore(context: Context) : SessionStore {
                     File(s.path).copyTo(f, overwrite = true)
                     Frame(s.role, f.absolutePath, s.source)
                 }
-                Cut(session.id, index, i * 1000L, frames)
+                // 조합 사진(있으면): 세션 폴더로 복사해 칸에 그대로 쓴다
+                val done = composed.getOrNull(i)?.let { (src, ai) ->
+                    File(dir(session), "cuts/%02d_composed.jpg".format(index)).also { File(src).copyTo(it, overwrite = true) }.absolutePath to ai
+                }
+                Cut(session.id, index, i * 1000L, frames, done?.first, done?.second ?: false)
             }
         }
         finish(session, cuts, emptyList(), stopped = false)
@@ -100,7 +104,9 @@ class FileSessionStore(context: Context) : SessionStore {
             .put("stopped", stopped)
             .put("sourceKinds", JSONArray((cuts.flatMap { c -> c.frames.map { it.source } } + clips.map { it.source }).distinct().map { it.name }))
             .put("cuts", JSONArray(cuts.map { c ->
-                JSONObject().put("index", c.index).put("tMs", c.tMs).put("frames", JSONArray(c.frames.map { f ->
+                JSONObject().put("index", c.index).put("tMs", c.tMs)
+                    .put("composed", c.composed?.let { File(it).relativeTo(dir(session)).path } ?: JSONObject.NULL).put("composedAi", c.composedAi)
+                    .put("frames", JSONArray(c.frames.map { f ->
                     JSONObject().put("role", f.role.name).put("path", File(f.path).relativeTo(dir(session)).path).put("source", f.source.name)
                 }))
             }))
