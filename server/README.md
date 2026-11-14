@@ -20,7 +20,7 @@ copy .env.example .env      # BIZROUTER_API_KEY, IMAGE_PROVIDER 설정
 - 폰과 PC 는 같은 네트워크여야 하고, Windows 방화벽에서 8787·8788 인바운드를 허용해야 한다.
 - `CHAZ_HTTPS_PORT=0` 이면 HTTPS 를 끈다(QR 은 http, 폰 카메라 모드는 쓸 수 없음).
 
-### 외부 공개 (Cloudflare Tunnel, `<서버 도메인>`)
+### 외부 공개 (Cloudflare Tunnel, 도메인은 `.env` 의 `PUBLIC_BASE_URL`)
 `app/guard.py` 가 외부 요청(Cloudflare 경유 또는 공인 IP)만 막는다. 이 PC·LAN 요청은 그대로.
 - 폰 경로(`/app`, `/s/`, 페어링 수락, 사진 받기·공유, 카메라 프레임, `/health`)는 토큰 없이 허용.
 - 나머지(차량 전용·AI)는 `X-Chaz-Token` 이 `.env` 의 `CHAZ_APP_TOKEN` 과 같아야 한다. 차량 앱은 `local.properties` 의 같은 값을 쓴다.
@@ -56,7 +56,7 @@ copy .env.example .env      # BIZROUTER_API_KEY, IMAGE_PROVIDER 설정
 
 같은 요청(provider + model + prompt + 장소)은 `data/frames/`에 캐시되어 곧바로 반환된다. `"force": true`를 주면 다시 생성한다.
 
-## 자동 실행 (<서버 도메인>)
+## 자동 실행 (외부 공개)
 `start-public.ps1` 이 서버(127.0.0.1:8787)와 Cloudflare 터널 `chaz` 를 띄우고, 하나가 죽으면 15초 안에 다시 띄운다.
 Windows 작업 스케줄러 `ChazBoot`(로그인 시, 숨김 창)가 이 스크립트를 실행한다. 로그: `server/data/logs/`.
 - 지금 바로 켜기: `Start-ScheduledTask ChazBoot` · 끄기: `Stop-ScheduledTask ChazBoot` 후 python/cloudflared(chaz.yml) 종료

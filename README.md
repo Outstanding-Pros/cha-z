@@ -78,6 +78,17 @@
 
 ## 실행
 
+### 0. 비밀값 (저장소에 없음 — 팀 안에서 따로 받기)
+
+키·토큰·도메인·서명 비밀번호는 저장소에 넣지 않습니다. 아래 파일을 담당자에게 따로 받아 같은 자리에 둡니다 (모두 `.gitignore` 대상).
+
+- `server/.env` — `BIZROUTER_API_KEY`, `CHAZ_APP_TOKEN`, `PUBLIC_BASE_URL`(외부 공개 도메인) 등. 항목 설명은 `server/.env.example`
+- `car-app/local.properties` — `CHAZ_SERVER_URL`, `CHAZ_APP_TOKEN`(서버와 같은 값), release 서명 비밀번호. 형식은 `car-app/local.properties.example`
+- `car-app/keystore/chaz-release.jks` — release 서명 키 (release APK 를 같은 서명으로 만들 때만)
+
+받지 않아도 돌아갑니다: 서버는 `IMAGE_PROVIDER=mock` 으로 AI 없이, 차량 앱은 에뮬레이터 기본 주소(`http://10.0.2.2:8787`)와 디버그 서명으로 빌드됩니다.
+
+
 ### 1. 서버
 
 ```powershell

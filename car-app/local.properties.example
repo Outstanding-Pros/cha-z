@@ -3,7 +3,7 @@
 
 # 로컬 개발 서버 (server/ — Edge Function 대체). 에뮬레이터 기준 호스트 PC 주소
 CHAZ_SERVER_URL=http://10.0.2.2:8787
-# 외부 공개 시: CHAZ_SERVER_URL=https://<서버 도메인> , 토큰은 server/.env 의 CHAZ_APP_TOKEN 과 같은 값
+# 외부 공개 시: CHAZ_SERVER_URL=https://<서버 도메인> (server/.env 의 PUBLIC_BASE_URL 과 같은 주소) , 토큰은 server/.env 의 CHAZ_APP_TOKEN 과 같은 값
 CHAZ_APP_TOKEN=
 
 # T10 Supabase 연동 시 채움

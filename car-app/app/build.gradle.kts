@@ -31,7 +31,7 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
 
         buildConfigField("String", "CHAZ_SERVER_URL", "\"${localProp("CHAZ_SERVER_URL", "http://10.0.2.2:8787")}\"")
-        // 서버 외부 공개(<서버 도메인>) 시 차량 전용·AI 경로용 앱 토큰. server/.env 의 CHAZ_APP_TOKEN 과 같아야 한다
+        // 서버 외부 공개(도메인) 시 차량 전용·AI 경로용 앱 토큰. server/.env 의 CHAZ_APP_TOKEN 과 같아야 한다
         buildConfigField("String", "CHAZ_APP_TOKEN", "\"${localProp("CHAZ_APP_TOKEN", "")}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${localProp("SUPABASE_URL", "")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProp("SUPABASE_ANON_KEY", "")}\"")

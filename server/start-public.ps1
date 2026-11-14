@@ -1,4 +1,4 @@
-# 차~즈 서버(127.0.0.1:8787) + Cloudflare 터널(<서버 도메인>)을 띄우고, 죽으면 다시 띄운다.
+# 차~즈 서버(127.0.0.1:8787) + Cloudflare 터널(도메인)을 띄우고, 죽으면 다시 띄운다.
 # 작업 스케줄러 'ChazBoot'(로그인 시)가 숨김 창으로 실행한다. 비밀값은 .env / ~/.cloudflared 에만 있고 여기엔 없다.
 $ErrorActionPreference = 'Continue'
 $server = $PSScriptRoot

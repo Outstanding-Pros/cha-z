@@ -1,4 +1,4 @@
-"""외부 공개용 요청 보호 (Cloudflare Tunnel 로 <서버 도메인> 를 열 때).
+"""외부 공개용 요청 보호 (Cloudflare Tunnel 로 도메인을 열 때).
 
 - 이 PC·LAN(에뮬레이터 10.0.2.2, 같은 Wi-Fi 폰)에서 온 요청은 지금처럼 그대로 통과.
 - 외부 요청 = Cloudflare 를 거친 요청(cf-connecting-ip 헤더) 또는 공인 IP 에서 직접 온 요청.
