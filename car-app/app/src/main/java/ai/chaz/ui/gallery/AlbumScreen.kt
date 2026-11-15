@@ -95,8 +95,8 @@ fun AlbumScreen(graph: AppGraph) {
                         is AlbumReel -> ListRow(r.id == selId, onClick = { selected = r.id }) {
                             Thumb(r.coverPath, "", Modifier.width(80.dp), ratio = 9f / 16f)
                             Column(Modifier.padding(start = 12.dp)) {
-                                Text((if (r.ai) "✨ " else "") + "릴스 · ${r.motion.label}", color = Tokens.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                                Text("${r.count}장 · ${r.durationMs / 1000}초 · ${whenText(r.at)}", color = Tokens.text3, fontSize = 14.sp)
+                                Text((if (r.ai) "✨ " else "") + "릴스 · ${r.label}", color = Tokens.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                                Text((if (r.count > 0) "${r.count}장 · " else "") + "${r.durationMs / 1000}초 · ${whenText(r.at)}", color = Tokens.text3, fontSize = 14.sp)
                             }
                         }
                         is MadePhoto -> ListRow(r.id == selId, onClick = { selected = r.id }) {
@@ -263,18 +263,18 @@ private fun ReelDetail(graph: AppGraph, r: AlbumReel, onDelete: () -> Unit) {
     val driving by graph.driving.status.collectAsState()
     val scope = rememberCoroutineScope()
     var sent by remember(r.id) { mutableStateOf<String?>(null) }
-    Card(Modifier.fillMaxSize(), title = (if (r.ai) "✨ " else "") + "릴스 · ${r.motion.label}", trailing = { Chip("릴스 지우기", selected = false, onClick = onDelete) }) {
+    Card(Modifier.fillMaxSize(), title = (if (r.ai) "✨ " else "") + "릴스 · ${r.label}", trailing = { Chip("릴스 지우기", selected = false, onClick = onDelete) }) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             ReelPlayer(r.videoPath, r.coverPath, allowed = !driving.restricted, modifier = Modifier.fillMaxHeight())
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("1080×1920 · 9:16 · ${r.durationMs / 1000}초 · 사진 ${r.count}장", color = Tokens.text, fontSize = 18.sp)
+                Text("1080×1920 · 9:16 · ${r.durationMs / 1000}초" + (if (r.count > 0) " · 사진 ${r.count}장" else ""), color = Tokens.text, fontSize = 18.sp)
                 Text(whenText(r.at), color = Tokens.text2, fontSize = 16.sp)
                 if (r.ai) AlbumTag("AI 생성 포함", Tokens.ai)
                 PrimaryButton("폰으로 보내기", Modifier.fillMaxWidth().padding(top = 12.dp)) {
                     scope.launch { sent = when (val n = graph.sendReel(r)) { null -> "보내지 못했어요"; 0 -> "연결된 폰이 없어요"; else -> "폰 ${n}대로 보냈어요" } }
                 }
                 sent?.let { Text(it, color = Tokens.accent, fontSize = 15.sp) }
-                Text("인스타 릴스 규격이라 폰에서 받아 그대로 올릴 수 있어요. 소리는 아직 없어요.", color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
+                Text("인스타 릴스 규격이라 폰에서 받아 그대로 올릴 수 있어요. 배경 음악은 차~즈가 직접 만든 음원이에요.", color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
             }
         }
     }

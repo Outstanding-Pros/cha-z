@@ -30,7 +30,8 @@ PUBLIC_EXACT = {
     ("POST", "/sync/camera/bundle"),  # 폰 직접 촬영 묶음 — 연결된 폰 id 로만 자기 차량에 전달
     ("POST", "/sync/voice"),  # 폰 음성 리모컨 — 연결된 폰 id 로만 자기 차량에 전달
 }
-AI_PATHS = ("/frames/generate", "/frames/opentop", "/frames/mix", "/voice/tts", "/voice/stt", "/intent/parse")
+IMAGE_PATHS = ("/frames/generate", "/frames/opentop", "/frames/mix", "/frames/scenery", "/frames/night", "/frames/petswap")
+AI_PATHS = IMAGE_PATHS + ("/voice/tts", "/voice/stt", "/intent/parse", "/reel/copy")
 
 PER_MIN_GENERAL = int(os.getenv("CHAZ_RATE_PER_MIN", "600"))   # 폰 미리보기 0.5초 간격 = 분당 120
 PER_MIN_AI = int(os.getenv("CHAZ_AI_PER_MIN", "20"))
@@ -92,7 +93,7 @@ async def guard(request: Request, call_next):
             _daily.update(day=today, n=0, img=0)
         if _daily["n"] >= DAILY_AI:
             return JSONResponse({"detail": "오늘 AI 사용량을 다 썼어요"}, status_code=429)
-        if path.startswith(("/frames/generate", "/frames/opentop", "/frames/mix")):
+        if path.startswith(IMAGE_PATHS):
             if _daily["img"] >= DAILY_IMAGE:
                 return JSONResponse({"detail": "오늘 이미지 생성량을 다 썼어요"}, status_code=429)
             _daily["img"] += 1

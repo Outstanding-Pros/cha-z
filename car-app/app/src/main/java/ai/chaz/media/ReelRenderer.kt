@@ -4,149 +4,130 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 
 /** 릴스 한 편에 들어가는 사진 한 장. */
 class ReelPhoto(val bitmap: Bitmap, val ai: Boolean, val caption: String?)
 
 /**
- * 릴스 한 프레임을 1080×1920 좌표로 그린다 (인코더가 실제 크기에 맞춰 canvas 를 줄인다).
- * - 이어붙이기 장면: 흐린 같은 사진을 배경으로 꽉 채우고, 가로 사진 전체를 가운데에 (사람이 잘리지 않게) 천천히 줌인.
- * - 그리드 장면: 핵심 영역(약 950×980) 안에 1~4칸, 흰 테두리.
- * - 공통: 위 안전 영역 아래 제목, 아래 안전 영역 위 '차~즈로 찍음', AI 사진이 보이면 오른쪽 위 'AI' 배지.
+ * 기본 릴스(직접 연출): 고른 사진 1~4장 + 연출(그리드·이어붙이기·쌓아서 공개·크롭줌).
+ * - 이어붙이기 장면: 흐린 같은 사진을 배경으로, 가로 사진 전체를 가운데에 천천히 줌인.
+ * - 그리드 장면: 핵심 영역 안에 1~4칸, 흰 테두리.
+ * - 공통: 제목(장소·시각), '차~즈로 찍음', AI 사진이 보이면 'AI' 배지.
  */
 class ReelRenderer(
     private val photos: List<ReelPhoto>,
     private val motion: ReelMotion,
     private val title: String,
     private val dateText: String,
-) {
+    override val mood: BgmMood = BgmMood.BRIGHT,
+    /** 크롭·줌 연출용: 사진마다 얼굴(없으면 사람) 영역 0~1 좌표. */
+    private val focus: List<FocusBox?> = emptyList(),
+    /** 사진에 덧입힐 색 (스타일 필터). */
+    private val grade: ((Canvas) -> Unit)? = null,
+    private val badge: String = "AI",
+) : ReelScene {
     private val n = photos.size
-    private val blurred: List<Bitmap> = photos.map { blur(it.bitmap) }
-    private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-    private val W = ReelSpec.W.toFloat()
-    private val H = ReelSpec.H.toFloat()
-    private val side = ReelSpec.SAFE_SIDE.toFloat()
-    private val titleBase = ReelSpec.SAFE_TOP + 70f
-    private val bottomSafe = H - ReelSpec.SAFE_BOTTOM
-    private val gridArea = ReelBox(side, titleBase + 50f, W - side, bottomSafe - 70f)
+    private val blurred: List<Bitmap> = photos.map { ReelDraw.blur(it.bitmap) }
 
-    val durationMs: Long get() = ReelTimeline.durationMs(motion, n)
+    override val durationMs: Long get() = ReelTimeline.durationMs(motion, n)
 
-    fun draw(c: Canvas, tMs: Long) {
+    override fun draw(c: Canvas, tMs: Long) {
+        if (motion == ReelMotion.CROP_ZOOM) { drawCropZoom(c, tMs); return }
         val m = ReelTimeline.at(motion, n, tMs)
         val single = m.single
         if (single != null) drawSingle(c, single, m.progress) else drawGrid(c, m)
-        // 공통 표기
-        drawTitle(c, if (single != null) photos[single].caption ?: title else title)
+        grade?.invoke(c)
+        ReelDraw.title(c, if (single != null) photos[single].caption ?: title else title, dateText)
         if (single != null && n > 1) drawDots(c, single)
         val aiShown = if (single != null) photos[single].ai else photos.any { it.ai }
-        if (aiShown) drawAiBadge(c)
-        drawMark(c)
+        if (aiShown) ReelDraw.aiBadge(c, badge)
+        ReelDraw.mark(c)
     }
 
     /** 커버: 그리드가 다 보인 장면. */
-    fun drawCover(c: Canvas) {
+    override fun drawCover(c: Canvas) {
         drawGrid(c, ReelMoment(null, 0f, 1f))
-        drawTitle(c, title)
-        if (photos.any { it.ai }) drawAiBadge(c)
-        drawMark(c)
+        grade?.invoke(c)
+        ReelDraw.title(c, title, dateText)
+        if (photos.any { it.ai }) ReelDraw.aiBadge(c, badge)
+        ReelDraw.mark(c)
     }
 
     private fun drawSingle(c: Canvas, i: Int, p: Float) {
-        val bmp = photos[i].bitmap
-        background(c, blurred[i])
-        val zoom = 1f + 0.08f * p
-        val fw = W * zoom
-        val fh = fw * bmp.height / bmp.width
-        val cy = (gridArea.t + gridArea.b) / 2
-        val dst = RectF((W - fw) / 2, cy - fh / 2, (W + fw) / 2, cy + fh / 2)
-        // 세로 사진이면 핵심 영역 높이를 넘지 않게 맞춘다
-        if (dst.height() > gridArea.h * 1.1f) {
-            val k = gridArea.h * 1.1f / dst.height()
-            val w2 = dst.width() * k; val h2 = dst.height() * k
-            dst.set((W - w2) / 2, cy - h2 / 2, (W + w2) / 2, cy + h2 / 2)
-        }
-        c.drawBitmap(bmp, null, dst, paint)
+        ReelDraw.background(c, blurred[i])
+        ReelDraw.fitWidth(c, photos[i].bitmap, (ReelDraw.core.t + ReelDraw.core.b) / 2, 1f + 0.08f * p)
     }
 
     private fun drawGrid(c: Canvas, m: ReelMoment) {
-        background(c, blurred.first())
+        ReelDraw.background(c, blurred.first())
         val zoom = 1f + 0.05f * (if (motion == ReelMotion.GRID) m.progress else 0f)
-        val pop = m.reveal
-        val s = zoom * (0.85f + 0.15f * ease(pop))
-        val cx = W / 2; val cy = (gridArea.t + gridArea.b) / 2
+        val s = zoom * (0.85f + 0.15f * ReelDraw.ease(m.reveal))
+        val core = ReelDraw.core
         c.save()
-        c.scale(s, s, cx, cy)
-        val cells = ReelTimeline.gridCells(n, gridArea, 22f)
-        val alpha = (255 * ease(pop)).toInt()
-        val frame = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; this.alpha = alpha }
-        val photoPaint = Paint(paint).apply { this.alpha = alpha }
-        cells.forEachIndexed { i, b ->
-            val outer = RectF(b.l, b.t, b.r, b.b)
-            c.drawRoundRect(outer, 14f, 14f, frame)
-            val inner = RectF(outer.left + 10f, outer.top + 10f, outer.right - 10f, outer.bottom - 10f)
-            val bmp = photos[i].bitmap
-            c.drawBitmap(bmp, Draw.crop(bmp.width, bmp.height, inner.width() / inner.height()), inner, photoPaint)
-        }
+        c.scale(s, s, ReelDraw.W / 2, (core.t + core.b) / 2)
+        val alpha = (255 * ReelDraw.ease(m.reveal)).toInt()
+        ReelTimeline.gridCells(n, core, 22f).forEachIndexed { i, b -> ReelDraw.card(c, photos[i].bitmap, ReelDraw.box(b), alpha = alpha, border = 10f) }
         c.restore()
     }
 
-    private fun background(c: Canvas, blur: Bitmap) {
+    /** 크롭·줌: 사진마다 [얼굴 클로즈업 → 사람 → 전체] 3박자로 줌아웃. 마지막 장은 그리드 없이 끝. */
+    private fun drawCropZoom(c: Canvas, tMs: Long) {
+        val beat = ReelTimeline.cropBeat(n)
+        val per = beat * 3
+        val i = (tMs / per).toInt().coerceIn(0, n - 1)
+        val u = (tMs - i * per).coerceIn(0, per - 1)
+        val stage = (u / beat).toInt()
+        val p = (u % beat).toFloat() / beat
+        val bmp = photos[i].bitmap
+        val f = focus.getOrNull(i) ?: FocusBox(0.35f, 0.25f, 0.65f, 0.75f)
         c.drawColor(Color.BLACK)
-        Draw.drawCover(c, blur, RectF(0f, 0f, W, H))
-        c.drawColor(Color.argb(110, 0, 0, 0))
-    }
-
-    private fun drawTitle(c: Canvas, text: String) {
-        val p = Draw.hand(Color.WHITE, 78f).apply { setShadowLayer(12f, 0f, 3f, Color.argb(160, 0, 0, 0)) }
-        val s = fit(text, p, W - side * 2 - 140f)
-        c.drawText(s, side, titleBase, p)
-        Draw.dateStamp(c, Draw.filmDate(dateText), W - side, titleBase, 34f)
+        // 목표 창(0~1 좌표): 0 = 얼굴 클로즈업, 1 = 얼굴 주변 넉넉히, 2 = 전체
+        val windows = listOf(f.expand(1.6f), f.expand(3.2f), FocusBox(0f, 0f, 1f, 1f))
+        val from = windows[stage]
+        val to = windows.getOrElse(stage + 1) { windows[2] }
+        val w = from.lerp(to, ReelDraw.ease(p * 0.6f))
+        if (stage == 2) {
+            ReelDraw.background(c, blurred[i])
+            ReelDraw.fitWidth(c, bmp, (ReelDraw.core.t + ReelDraw.core.b) / 2, 1f + 0.05f * p)
+        } else {
+            // 9:16 창으로 잘라 화면 가득
+            val src = w.toRect(bmp.width, bmp.height, ReelDraw.W / ReelDraw.H)
+            c.drawBitmap(bmp, src, android.graphics.RectF(0f, 0f, ReelDraw.W, ReelDraw.H), ReelDraw.paint)
+        }
+        grade?.invoke(c)
+        ReelDraw.title(c, photos[i].caption ?: title, dateText)
+        if (photos[i].ai) ReelDraw.aiBadge(c, badge)
+        if (n > 1) drawDots(c, i)
+        ReelDraw.mark(c)
     }
 
     private fun drawDots(c: Canvas, cur: Int) {
         val r = 9f; val gap = 30f
-        val y = gridArea.b + 34f
-        val x0 = W / 2 - gap * (n - 1) / 2
+        val y = ReelDraw.core.b + 34f
+        val x0 = ReelDraw.W / 2 - gap * (n - 1) / 2
         val on = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         val off = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 255, 255, 255) }
         for (i in 0 until n) c.drawCircle(x0 + gap * i, y, r, if (i <= cur) on else off)
     }
+}
 
-    private fun drawAiBadge(c: Canvas) {
-        val p = Draw.text(Color.WHITE, 30f, bold = true)
-        val label = "AI"
-        val w = p.measureText(label)
-        val r = RectF(W - side - w - 36f, ReelSpec.SAFE_TOP + 100f, W - side, ReelSpec.SAFE_TOP + 148f)
-        c.drawRoundRect(r, 24f, 24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(150, 0, 0, 0) })
-        c.drawText(label, r.left + 18f, r.centerY() + 11f, p)
+/** 사진 안의 관심 영역 (0~1 좌표). */
+data class FocusBox(val l: Float, val t: Float, val r: Float, val b: Float) {
+    val cx get() = (l + r) / 2
+    val cy get() = (t + b) / 2
+    fun expand(k: Float): FocusBox {
+        val hw = (r - l) * k / 2; val hh = (b - t) * k / 2
+        return FocusBox((cx - hw).coerceAtLeast(0f), (cy - hh).coerceAtLeast(0f), (cx + hw).coerceAtMost(1f), (cy + hh).coerceAtMost(1f))
     }
-
-    /** '차~즈로 찍음' — 왼쪽 아래(오른쪽 아래는 릴스 버튼 자리). */
-    private fun drawMark(c: Canvas) {
-        val p = Draw.text(Color.argb(220, 255, 255, 255), 30f, bold = true).apply { setShadowLayer(8f, 0f, 2f, Color.argb(160, 0, 0, 0)) }
-        c.drawText("차~즈로 찍음 · CHA~Z", side, bottomSafe - 14f, p)
-    }
-
-    private fun fit(s: String, p: Paint, max: Float): String {
-        if (p.measureText(s) <= max) return s
-        var t = s
-        while (t.isNotEmpty() && p.measureText("$t…") > max) t = t.dropLast(1)
-        return "$t…"
-    }
-
-    private fun ease(x: Float) = 1f - (1f - x) * (1f - x)
-
-    /** 아주 작게 줄였다가 두 배씩 여러 번 키워(매 단계 선형 보간) 깍두기 없이 부드럽게 흐린다. */
-    private fun blur(b: Bitmap): Bitmap {
-        val w0 = 40; val h0 = (w0 * b.height / b.width).coerceAtLeast(2)
-        var cur = Bitmap.createScaledBitmap(b, w0, h0, true)
-        repeat(4) {
-            val next = Bitmap.createScaledBitmap(cur, cur.width * 2, cur.height * 2, true)
-            if (next !== cur) cur.recycle()
-            cur = next
-        }
-        return cur
+    fun lerp(o: FocusBox, t: Float) = FocusBox(l + (o.l - l) * t, this.t + (o.t - this.t) * t, r + (o.r - r) * t, b + (o.b - b) * t)
+    /** 이 창을 품는, aspect(가로/세로) 비율의 원본 픽셀 사각형. */
+    fun toRect(w: Int, h: Int, aspect: Float): android.graphics.Rect {
+        var rw = (r - l) * w; var rh = (b - t) * h
+        if (rw / rh > aspect) rh = rw / aspect else rw = rh * aspect
+        if (rw > w) { rw = w.toFloat(); rh = rw / aspect }
+        if (rh > h) { rh = h.toFloat(); rw = rh * aspect }
+        val x = (cx * w - rw / 2).coerceIn(0f, w - rw)
+        val y = (cy * h - rh / 2).coerceIn(0f, h - rh)
+        return android.graphics.Rect(x.toInt(), y.toInt(), (x + rw).toInt(), (y + rh).toInt())
     }
 }

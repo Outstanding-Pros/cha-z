@@ -29,6 +29,34 @@ class AiOpenTopClient(private val baseUrl: String, private val timeoutMs: Int = 
             mapOf("view" to view), "AI로 만들지 못했어요",
         )
 
+    /** ② 오션 브릿지: 전방+후방 → 넓은 풍경 파노라마 (사람 없음, 얼굴 안 보냄). */
+    suspend fun scenery(front: Bitmap, rear: Bitmap): Bitmap =
+        post("/frames/scenery", listOf("front" to (front to 1280), "rear" to (rear to 1280)), emptyMap(), "파노라마를 만들지 못했어요")
+
+    /** ③ 차박 나이트: 창밖만 별하늘 + 웜톤 실내. */
+    suspend fun night(interior: Bitmap): Bitmap =
+        post("/frames/night", listOf("interior" to (interior to 1600)), emptyMap(), "별하늘을 만들지 못했어요")
+
+    /** ④ 펫 드라이버: 운전석 사람 ↔ 조수석 반려견. */
+    suspend fun petSwap(interior: Bitmap): Bitmap =
+        post("/frames/petswap", listOf("interior" to (interior to 1600)), emptyMap(), "자리 바꾸기를 못 했어요")
+
+    /** ① 트립 로그 / ⑤ 로드 무비 카피. 실패하면 null (템플릿 카피로). */
+    suspend fun copy(style: String, place: String?, date: String, time: String, spots: List<String> = emptyList()): org.json.JSONObject? = withContext(Dispatchers.IO) {
+        runCatching {
+            val conn = ServerHttp.open("$baseUrl/reel/copy").apply {
+                requestMethod = "POST"; doOutput = true; connectTimeout = 5_000; readTimeout = 15_000
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+            try {
+                val body = org.json.JSONObject().put("style", style).put("place", place).put("date", date).put("time", time)
+                    .put("spots", org.json.JSONArray(spots.take(12)))
+                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                if (conn.responseCode != 200) null else org.json.JSONObject(conn.inputStream.bufferedReader().readText())
+            } finally { conn.disconnect() }
+        }.getOrNull()
+    }
+
     private suspend fun post(path: String, images: List<Pair<String, Pair<Bitmap, Int>>>, fields: Map<String, String>, failText: String): Bitmap = withContext(Dispatchers.IO) {
         val boundary = "chaz" + System.nanoTime()
         val conn = ServerHttp.open("$baseUrl$path").apply {

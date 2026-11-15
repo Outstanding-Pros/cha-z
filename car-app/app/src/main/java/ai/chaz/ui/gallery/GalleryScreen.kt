@@ -2,6 +2,10 @@ package ai.chaz.ui.gallery
 
 import ai.chaz.AppGraph
 import ai.chaz.media.Layout
+import ai.chaz.media.ReelInput
+import ai.chaz.media.ReelMotion
+import ai.chaz.media.ReelStyle
+import ai.chaz.media.ReelTimeline
 import ai.chaz.sync.AlbumOrigin
 import ai.chaz.sync.AlbumVideo
 import ai.chaz.sync.AlbumPick
@@ -197,6 +201,10 @@ private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit, reel: Boolean = 
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // 릴스: 스타일 + (영상 스타일) 고른 동영상 촬영 + (트립 로그) 고른 날
+    var style by remember { mutableStateOf(ai.chaz.media.ReelStyle.BASIC) }
+    var pickedVideo by remember { mutableStateOf<String?>(null) }
+    var pickedDay by remember { mutableStateOf<Long?>(null) }
 
     fun put(p: AlbumPick) { slots[active] = p; active = PhoneAlbum.nextEmpty(slots.toList(), active); message = null }
     // 방금 찍은 촬영: 컷마다 실내 사진을 칸에 미리 넣는다
@@ -222,7 +230,9 @@ private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit, reel: Boolean = 
     }
 
     Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Card(Modifier.weight(1f).fillMaxHeight(), title = "앨범에서 고르기") {
+        if (reel && style.input != ai.chaz.media.ReelInput.PICKS) ReelSourceList(
+            style, videos, bundles, pickedVideo, pickedDay, onVideo = { pickedVideo = it }, onDay = { pickedDay = it }, modifier = Modifier.weight(1f),
+        ) else Card(Modifier.weight(1f).fillMaxHeight(), title = "앨범에서 고르기") {
             if (bundles.isEmpty() && made.isEmpty()) {
                 Text("앨범이 비어 있어요. '차~즈'로 찍거나 폰에서 묶음을 보내 주세요.", color = Tokens.text2, fontSize = Tokens.bodySize)
                 return@Card
@@ -287,7 +297,7 @@ private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit, reel: Boolean = 
         }
         val filled = slots.filterNotNull()
         if (reel) {
-            ReelCard(graph, filled, onBack, slot = { i, m ->
+            ReelCard(graph, style, { style = it }, filled, videos.firstOrNull { it.id == pickedVideo }, pickedDay, onBack, slot = { i, m ->
                 val p = slots[i]
                 SlotFrame(i + 1, i == active, p != null, p?.let { (if (it.ai) "✨ " else "") + it.label } ?: "", m,
                     onClick = { active = i }, onClear = { slots[i] = null; active = i }) {
@@ -322,7 +332,7 @@ private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit, reel: Boolean = 
 }
 
 @Composable
-private fun PickRow(usedIn: List<Int>?, onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun PickRow(usedIn: List<Int>?, onClick: () -> Unit, selectedText: String? = null, content: @Composable () -> Unit) {
     val on = usedIn != null
     Row(
         Modifier.fillMaxWidth().clip(Tokens.controlShape)
@@ -333,7 +343,7 @@ private fun PickRow(usedIn: List<Int>?, onClick: () -> Unit, content: @Composabl
     ) {
         content()
         Spacer(Modifier.weight(1f))
-        usedIn?.let { Text("${it.joinToString(", ")}컷에 넣음", color = Tokens.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+        usedIn?.let { Text(selectedText ?: "${it.joinToString(", ")}컷에 넣음", color = Tokens.accent, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -407,51 +417,173 @@ private fun BundleFrameBuilder(graph: AppGraph, layout: Layout, onBack: () -> Un
 }
 
 private const val REEL_TITLE = "릴스 (세로)"
-private const val REEL_DESC = "인스타 릴스 규격(1080×1920, 9:16) 영상과 커버. 앨범 사진 1~4장을 고르고 연출(그리드 · 이어붙이기 · 쌓아서 공개)을 골라요."
+private const val REEL_DESC = "인스타 릴스 규격(1080×1920, 9:16) 영상 + 커버 + 자체 배경 음악. 스타일(① 트립 로그 ~ ⑤ 로드 무비) 또는 직접 연출로 만들어요."
 
-/** ② 릴스: 칸 1~4 + 연출 고르기 + 만들기(진행률) + 결과 미리보기·폰 전송. 결과는 앨범에도 들어간다. */
+/**
+ * ② 릴스: 스타일 고르기 → 재료(사진 1~4장 / 동영상 촬영 / 하루) → (직접 연출이면 연출, 스타일이면 AI 사용) → 만들기.
+ * 결과 미리보기·폰 전송. 결과는 앨범에도 들어간다.
+ */
 @Composable
-private fun ReelCard(graph: AppGraph, picks: List<AlbumPick>, onBack: () -> Unit, slot: @Composable (Int, Modifier) -> Unit) {
+private fun ReelCard(
+    graph: AppGraph, style: ReelStyle, onStyle: (ReelStyle) -> Unit,
+    picks: List<AlbumPick>, video: AlbumVideo?, day: Long?,
+    onBack: () -> Unit, slot: @Composable (Int, Modifier) -> Unit,
+) {
     val job by graph.reelJob.collectAsState()
     val driving by graph.driving.status.collectAsState()
     val scope = rememberCoroutineScope()
-    var motion by remember { mutableStateOf(ai.chaz.media.ReelMotion.STACK) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var motion by remember { mutableStateOf(ReelMotion.STACK) }
+    var useAi by remember { mutableStateOf(true) }
+    var askConsent by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf<String?>(null) }
     val working = job is AppGraph.ReelJob.Working
-    val enough = picks.size >= motion.minPicks
+    val request: AppGraph.ReelRequest? = when (style.input) {
+        ReelInput.PICKS -> if (style == ReelStyle.BASIC) AppGraph.ReelRequest.Basic(picks, motion).takeIf { picks.size >= motion.minPicks }
+            else AppGraph.ReelRequest.Picks(style, picks.take(style.maxPicks), useAi).takeIf { picks.size >= style.minPicks }
+        ReelInput.VIDEO -> video?.let { AppGraph.ReelRequest.Video(style, it, useAi) }
+        ReelInput.DAY -> day?.let { AppGraph.ReelRequest.Day(it, useAi) }
+    }
+    fun make() {
+        val r = request ?: return
+        if (style.faceAi && useAi && !ai.chaz.sync.AiConsent.given(ctx)) { askConsent = true; return }
+        sent = null; graph.makeReel(r)
+    }
+    val needText = when (style.input) {
+        ReelInput.PICKS -> "사진을 ${if (style == ReelStyle.BASIC) motion.minPicks else style.minPicks}장 이상 넣어 주세요"
+        ReelInput.VIDEO -> "왼쪽에서 동영상 촬영을 골라 주세요"
+        ReelInput.DAY -> "왼쪽에서 날짜를 골라 주세요"
+    }
+    val buttonText = when {
+        working -> "만드는 중… ${((job as AppGraph.ReelJob.Working).progress * 100).toInt()}%"
+        request == null -> needText
+        style == ReelStyle.BASIC -> "${motion.label} 릴스 만들기 (${picks.size}장 · ${ReelTimeline.durationMs(motion, picks.size) / 1000}초)"
+        else -> "${style.title} 릴스 만들기"
+    }
+    val styleControls: @Composable () -> Unit = {
+        SectionLabel("스타일", Modifier.padding(top = 4.dp))
+        ReelStyle.entries.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                row.forEach { s -> Chip(s.title, selected = s == style, enabled = !working) { onStyle(s) } }
+            }
+        }
+        Text(style.desc, color = Tokens.text2, fontSize = 15.sp, lineHeight = 21.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+    val optionControls: @Composable () -> Unit = {
+        if (style == ReelStyle.BASIC) {
+            SectionLabel("연출", Modifier.padding(top = 14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ReelMotion.entries.forEach { m -> Chip(m.label, selected = m == motion, enabled = !working) { motion = m } }
+            }
+            Text(motion.desc, color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+        } else style.aiStep?.let { step ->
+            SectionLabel("AI 단계", Modifier.padding(top = 14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Chip("✨ $step", selected = useAi, color = Tokens.ai, enabled = !working) { useAi = true }
+                Chip("AI 없이", selected = !useAi, enabled = !working) { useAi = false }
+            }
+            Text("AI 없이(또는 실패하면): ${style.fallback}", color = Tokens.text3, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
     Row(Modifier.width(1060.dp).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        SlotsCard(
-            REEL_TITLE, REEL_DESC, onBack, "칸 — 칸을 고르고 왼쪽 사진을 누르세요 (순서 = 릴스 순서)", 4, slot,
-            buttonText = when {
-                working -> "만드는 중… ${((job as AppGraph.ReelJob.Working).progress * 100).toInt()}%"
-                enough -> "${motion.label} 릴스 만들기 (${picks.size}장 · ${ai.chaz.media.ReelTimeline.durationMs(motion, picks.size) / 1000}초)"
-                else -> "사진을 ${motion.minPicks}장 이상 넣어 주세요"
-            },
-            enabled = enough && !working, message = (job as? AppGraph.ReelJob.Failed)?.message,
-            onMake = { sent = null; graph.makeReel(picks, motion) },
-            modifier = Modifier.weight(1f),
-            extra = {
-                SectionLabel("연출", Modifier.padding(top = 16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ai.chaz.media.ReelMotion.entries.forEach { m -> Chip(m.label, selected = m == motion, enabled = !working) { motion = m } }
-                }
-                Text(motion.desc, color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
-            },
-        )
-        // 결과 미리보기 (세로)
+        if (style.input == ReelInput.PICKS) SlotsCard(
+            REEL_TITLE, REEL_DESC, onBack,
+            if (style == ReelStyle.PET) "칸 — 마지막 칸 사진에서 자리가 바뀌어요 (반려견이 조수석에 탄 사진)" else "칸 — 칸을 고르고 왼쪽 사진을 누르세요 (순서 = 릴스 순서)",
+            4, slot, buttonText = buttonText, enabled = request != null && !working,
+            message = (job as? AppGraph.ReelJob.Failed)?.message, onMake = ::make, modifier = Modifier.weight(1f),
+            extra = { styleControls(); optionControls() },
+        ) else Card(Modifier.weight(1f).fillMaxHeight(), title = REEL_TITLE, trailing = { Chip("← 프레임 다시 고르기", selected = false, onClick = onBack) }) {
+            styleControls()
+            optionControls()
+            SectionLabel("재료", Modifier.padding(top = 14.dp))
+            Text(
+                when (style.input) {
+                    ReelInput.VIDEO -> video?.let { "▶ 동영상 촬영 ${whenText(it.at)} · 전방 영상 + 실내 4컷" } ?: "아직 고르지 않았어요"
+                    else -> day?.let { "${whenText(it).substringBefore(" ")} ${whenText(it).split(" ").getOrElse(1) { "" }}의 촬영 전부" } ?: "아직 고르지 않았어요"
+                },
+                color = Tokens.text, fontSize = 17.sp,
+            )
+            Spacer(Modifier.weight(1f))
+            PrimaryButton(buttonText, Modifier.fillMaxWidth(), enabled = request != null && !working, onClick = ::make)
+            (job as? AppGraph.ReelJob.Failed)?.message?.let { Text(it, color = Tokens.warn, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp)) }
+        }
         Card(Modifier.width(380.dp).fillMaxHeight(), title = "결과") {
             when (val j = job) {
                 is AppGraph.ReelJob.Done -> {
                     ReelPlayer(j.reel.videoPath, j.reel.coverPath, allowed = !driving.restricted, modifier = Modifier.fillMaxWidth().weight(1f, fill = false))
-                    Text("앨범에 저장했어요 · ${j.reel.durationMs / 1000}초", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
+                    Text("앨범에 저장했어요 · ${j.reel.label} · ${j.reel.durationMs / 1000}초", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
                     PrimaryButton("폰으로 보내기", Modifier.fillMaxWidth().padding(top = 8.dp)) {
                         scope.launch { sent = when (val n = graph.sendReel(j.reel)) { null -> "보내지 못했어요"; 0 -> "연결된 폰이 없어요"; else -> "폰 ${n}대로 보냈어요" } }
                     }
                     sent?.let { Text(it, color = Tokens.accent, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp)) }
                 }
-                is AppGraph.ReelJob.Working -> Text("1080×1920 영상으로 그리는 중이에요. 다른 탭에 가도 계속 만들어요.", color = Tokens.text2, fontSize = 16.sp, lineHeight = 23.sp)
+                is AppGraph.ReelJob.Working -> Text("1080×1920 영상과 배경 음악을 만드는 중이에요. AI 단계가 있으면 조금 더 걸려요. 다른 탭에 가도 계속 만들어요.", color = Tokens.text2, fontSize = 16.sp, lineHeight = 23.sp)
                 else -> Text("만든 릴스가 여기서 재생돼요.", color = Tokens.text3, fontSize = 16.sp)
             }
         }
     }
+    if (askConsent) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { askConsent = false },
+        containerColor = Tokens.surface,
+        title = { Text("AI 사용 동의", color = Tokens.text, fontSize = 24.sp, fontWeight = FontWeight.Bold) },
+        text = {
+            Text(
+                "고른 실내 사진(얼굴 포함)이 차~즈 서버를 거쳐 AI 서비스(Google Gemini)로 전송돼요.\n\n• 서버는 보낸 사진을 저장하지 않아요\n• 결과물에는 'AI' 표시가 남아요\n• 사진에 나온 모든 사람이 동의한 경우에만 사용해 주세요",
+                color = Tokens.text2, fontSize = 18.sp, lineHeight = 27.sp,
+            )
+        },
+        confirmButton = { PrimaryButton("동의하고 만들기", color = Tokens.ai) { ai.chaz.sync.AiConsent.set(ctx, true); askConsent = false; make() } },
+        dismissButton = { Chip("AI 없이 만들기", selected = false) { askConsent = false; useAi = false; request?.let { graph.makeReel(when (it) { is AppGraph.ReelRequest.Picks -> it.copy(useAi = false); else -> it }) } } },
+    )
 }
+
+/** 영상 스타일: 동영상 촬영 고르기 / 트립 로그: 날짜 고르기. */
+@Composable
+private fun ReelSourceList(
+    style: ReelStyle, videos: List<AlbumVideo>, bundles: List<PhoneBundle>, picked: String?, pickedDay: Long?,
+    onVideo: (String) -> Unit, onDay: (Long) -> Unit, modifier: Modifier,
+) {
+    Card(modifier.fillMaxHeight(), title = if (style.input == ReelInput.VIDEO) "동영상 촬영 고르기" else "날짜 고르기") {
+        if (style.input == ReelInput.VIDEO) {
+            val list = videos.filter { it.clips.containsKey(CameraRole.FRONT) }
+            if (list.isEmpty()) { Text("전방 영상이 있는 동영상 촬영이 없어요. 대기 화면에서 '동영상' 방식으로 찍어 주세요.", color = Tokens.text2, fontSize = Tokens.bodySize); return@Card }
+            Text("12초 촬영 한 번 = 전방 영상 + 실내 4컷", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(list, key = { it.id }) { v ->
+                    PickRow(if (v.id == picked) listOf(1) else null, onClick = { onVideo(v.id) }, selectedText = "선택됨") {
+                        ClipThumb(v.clips[CameraRole.FRONT], "전방", Modifier.width(200.dp), ratio = 16f / 9f)
+                        Column(Modifier.padding(start = 12.dp)) {
+                            AlbumTag("▶ ${v.durationMs / 1000}초")
+                            Text(whenText(v.at), color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                            Text("실내 ${bundles.count { it.group == v.group }}컷", color = Tokens.text3, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        } else {
+            val days = bundles.groupBy { dayStart(it.receivedAt) }.toSortedMap(compareByDescending { it })
+            if (days.isEmpty()) { Text("앨범이 비어 있어요.", color = Tokens.text2, fontSize = Tokens.bodySize); return@Card }
+            Text("같은 날 두 번 이상 찍은 날만 만들 수 있어요 (촬영마다 대표 컷 1장)", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(bottom = 12.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(days.entries.toList(), key = { it.key }) { (d, list) ->
+                    val sessions = list.groupBy { it.group ?: it.id }
+                    val ok = sessions.size >= 2
+                    PickRow(if (d == pickedDay) listOf(1) else null, onClick = { if (ok) onDay(d) }, selectedText = "선택됨") {
+                        Row(Modifier.width(200.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            sessions.values.take(3).forEach { g -> Thumb(g.minBy { it.cut }.photos.values.firstOrNull(), "", Modifier.weight(1f)) }
+                        }
+                        Column(Modifier.padding(start = 12.dp)) {
+                            Text(SimpleDateFormat("M월 d일", Locale.KOREA).format(Date(d)), color = Tokens.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("촬영 ${sessions.size}번 · 스팟 ${list.mapNotNull { it.place }.distinct().size.coerceAtLeast(if (ok) 1 else 0)}곳" + if (ok) "" else " · 2번 이상 필요",
+                                color = if (ok) Tokens.text2 else Tokens.text3, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun dayStart(ms: Long): Long = java.util.Calendar.getInstance().apply {
+    timeInMillis = ms; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+}.timeInMillis

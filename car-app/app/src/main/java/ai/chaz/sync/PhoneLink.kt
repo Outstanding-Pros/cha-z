@@ -193,7 +193,7 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
     /** 릴스(세로 MP4) 전송 — 서버는 kind=VIDEO 면 .mp4 로 저장한다. */
     suspend fun deliverReel(r: AlbumReel): Int = withContext(Dispatchers.IO) {
         val meta = JSONObject()
-            .put("id", r.id).put("sessionIds", JSONArray()).put("layout", "REEL_" + r.motion.name)
+            .put("id", r.id).put("sessionIds", JSONArray()).put("layout", "REEL")
             .put("kind", "VIDEO").put("filters", JSONArray())
             .put("sourceKinds", JSONArray(if (r.ai) listOf("AI_GENERATED") else emptyList<String>())).put("createdOn", "CAR")
         upload(meta, File(r.videoPath), "reel.mp4", "video/mp4")

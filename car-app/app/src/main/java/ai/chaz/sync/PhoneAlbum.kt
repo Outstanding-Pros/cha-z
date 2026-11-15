@@ -28,6 +28,8 @@ data class PhoneBundle(
     val group: String? = null,
     val cut: Int = 0,
     val sources: Map<CameraRole, SourceKind> = emptyMap(),
+    /** 찍은 곳 (스팟 이름, 모르면 null) — 트립 로그 스팟 카드. */
+    val place: String? = null,
 ) {
     fun sourceOf(role: CameraRole): SourceKind = sources[role] ?: SourceKind.PHONE_CAMERA
     /** 실내를 폰으로 찍었으면 L1 창문 마스크(고정 차량 카메라 전용)를 못 쓴다. */
@@ -130,10 +132,10 @@ class PhoneAlbumStore(context: Context) {
     }
 
     /** 폰에서 받은 묶음 (사진 바이트). */
-    suspend fun save(id: String, photos: Map<CameraRole, ByteArray>): PhoneBundle = withContext(Dispatchers.IO) {
+    suspend fun save(id: String, photos: Map<CameraRole, ByteArray>, place: String? = null): PhoneBundle = withContext(Dispatchers.IO) {
         val dir = File(root, id).apply { mkdirs() }
         val paths = photos.mapValues { (role, bytes) -> File(dir, file(role)).apply { writeBytes(bytes) }.absolutePath }
-        put(write(dir, PhoneBundle(id, System.currentTimeMillis(), paths)))
+        put(write(dir, PhoneBundle(id, System.currentTimeMillis(), paths, place = place)))
     }
 
     /**
@@ -149,7 +151,7 @@ class PhoneAlbumStore(context: Context) {
             val id = "${group}_c${cut.index}"
             val dir = File(root, id).apply { mkdirs() }
             val paths = cut.frames.associate { f -> f.role to File(dir, file(f.role)).also { File(f.path).copyTo(it, overwrite = true) }.absolutePath }
-            write(dir, PhoneBundle(id, at + cut.index, paths, origin, group, cut.index, cut.frames.associate { it.role to it.source }))
+            write(dir, PhoneBundle(id, at + cut.index, paths, origin, group, cut.index, cut.frames.associate { it.role to it.source }, result.session.spotName))
         }
         val clips = result.clips.filter { it.frameCount > 0 && File(it.path).isDirectory }
         if (clips.isNotEmpty()) {
@@ -207,7 +209,8 @@ class PhoneAlbumStore(context: Context) {
             JSONObject().put("id", b.id).put("receivedAt", b.receivedAt)
                 .put("roles", org.json.JSONArray(b.photos.keys.map { it.name }))
                 .put("origin", b.origin.name).put("group", b.group ?: JSONObject.NULL).put("cut", b.cut)
-                .put("sources", JSONObject().apply { b.sources.forEach { (r, k) -> put(r.name, k.name) } }).toString(),
+                .put("sources", JSONObject().apply { b.sources.forEach { (r, k) -> put(r.name, k.name) } })
+                .put("place", b.place ?: JSONObject.NULL).toString(),
         )
         return b
     }
@@ -223,6 +226,7 @@ class PhoneAlbumStore(context: Context) {
             origin = runCatching { AlbumOrigin.valueOf(j.optString("origin")) }.getOrDefault(AlbumOrigin.PHONE),
             group = j.optString("group").takeIf { j.has("group") && !j.isNull("group") && it.isNotBlank() },
             cut = j.optInt("cut", 0), sources = sources,
+            place = j.optString("place").takeIf { j.has("place") && !j.isNull("place") && it.isNotBlank() },
         ).takeIf { photos.isNotEmpty() }
     }.getOrNull()
 

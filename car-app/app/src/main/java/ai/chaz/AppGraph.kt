@@ -588,7 +588,7 @@ class AppGraph(context: Context) {
             .mapNotNull { r -> phone.fetchBundlePhoto(bundleId, r.name)?.let { r to it } }.toMap()
         phone.doneBundle(bundleId)
         if (photos.isEmpty()) return
-        val saved = runCatching { phoneAlbum.save(newSessionId(), photos) }
+        val saved = runCatching { phoneAlbum.save(newSessionId(), photos, spotGuide.placeForSession()) }
             .onFailure { android.util.Log.w("ChazPhone", "폰 묶음 저장 실패: ${it.javaClass.simpleName}") }.getOrNull() ?: return
         android.util.Log.i("ChazPhone", "폰 묶음 받음 ${saved.photos.size}장")
         if (capture.model.value.state !is AppState.Capturing) runCatching { speech.speak(phrases.phoneBundle(saved.photos.size)) }
@@ -673,45 +673,141 @@ class AppGraph(context: Context) {
     val reelJob: StateFlow<ReelJob?> = _reelJob.asStateFlow()
     fun clearReelJob() { if (_reelJob.value !is ReelJob.Working) _reelJob.value = null }
 
-    /** 고른 앨범 사진(1~4장) + 연출 → 1080×1920 MP4 + 커버. 결과는 앨범(reels)에 들어간다. 탭을 옮겨도 이어진다. */
-    fun makeReel(picks: List<ai.chaz.sync.AlbumPick>, motion: ai.chaz.media.ReelMotion) {
-        if (_reelJob.value is ReelJob.Working || picks.size < motion.minPicks) return
+    /** 릴스 요청 — 스타일마다 재료가 다르다(ReelStyle.input). useAi = 스타일의 AI 단계를 쓸지(끄면 대체 경로). */
+    sealed interface ReelRequest {
+        val style: ai.chaz.media.ReelStyle
+        data class Basic(val picks: List<ai.chaz.sync.AlbumPick>, val motion: ai.chaz.media.ReelMotion) : ReelRequest { override val style get() = ai.chaz.media.ReelStyle.BASIC }
+        data class Picks(override val style: ai.chaz.media.ReelStyle, val picks: List<ai.chaz.sync.AlbumPick>, val useAi: Boolean) : ReelRequest
+        data class Video(override val style: ai.chaz.media.ReelStyle, val video: ai.chaz.sync.AlbumVideo, val useAi: Boolean) : ReelRequest
+        data class Day(val dayStart: Long, val useAi: Boolean) : ReelRequest { override val style get() = ai.chaz.media.ReelStyle.TRIP }
+    }
+
+    /** 고른 앨범 사진(1~4장) + 연출 → 1080×1920 MP4 + 커버 (직접 연출). */
+    fun makeReel(picks: List<ai.chaz.sync.AlbumPick>, motion: ai.chaz.media.ReelMotion) = makeReel(ReelRequest.Basic(picks, motion))
+
+    /** 릴스 만들기 → 앨범(reels). 탭을 옮겨도 이어진다. AI 단계가 실패하면 기획서의 대체 경로로 만든다. */
+    fun makeReel(req: ReelRequest) {
+        if (_reelJob.value is ReelJob.Working) return
         _reelJob.value = ReelJob.Working(0f)
         scope.launch(Dispatchers.Default) {
+            val loaded = mutableListOf<android.graphics.Bitmap>()
+            fun load(path: String, maxW: Int = 1400, rgb565: Boolean = false): android.graphics.Bitmap {
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, o)
+                val sample = generateSequence(1) { it * 2 }.first { o.outWidth / (it * 2) < maxW }
+                return (BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+                    inSampleSize = sample; if (rgb565) inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                }) ?: error("사진을 읽지 못했어요")).also { loaded += it }
+            }
             val result = runCatching {
-                val title = spotGuide.placeForSession() ?: "오늘의 드라이브"
+                val place = spotGuide.placeForSession() ?: "오늘의 드라이브"
                 val hm = SimpleDateFormat("HH:mm", Locale.KOREA)
-                val photos = picks.map { p ->
-                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(p.path, opts)
-                    val sample = generateSequence(1) { it * 2 }.first { opts.outWidth / (it * 2) < 1400 }
-                    val bmp = BitmapFactory.decodeFile(p.path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: error("사진을 읽지 못했어요")
-                    val at = when (p) { is ai.chaz.sync.AlbumPick.Photo -> p.bundle.receivedAt; is ai.chaz.sync.AlbumPick.Made -> p.photo.at }
-                    ai.chaz.media.ReelPhoto(bmp, p.ai, "📍 $title · ${hm.format(Date(at))}")
+                val date = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date())
+                val now = hm.format(Date())
+                var aiUsed = false
+                fun atOf(p: ai.chaz.sync.AlbumPick) = when (p) { is ai.chaz.sync.AlbumPick.Photo -> p.bundle.receivedAt; is ai.chaz.sync.AlbumPick.Made -> p.photo.at }
+                fun placeOf(p: ai.chaz.sync.AlbumPick) = (p as? ai.chaz.sync.AlbumPick.Photo)?.bundle?.place ?: place
+                suspend fun <T> tryAi(step: String, block: suspend () -> T): T? = runCatching { block() }
+                    .onFailure { android.util.Log.w("ChazReel", "AI 단계 실패($step) → 대체 경로: ${it.javaClass.simpleName}") }.getOrNull()
+                    ?.also { aiUsed = true }
+                fun videoParts(v: ai.chaz.sync.AlbumVideo): Pair<List<android.graphics.Bitmap>, List<ai.chaz.sync.PhoneBundle>> {
+                    val dir = v.clips[CameraRole.FRONT] ?: error("전방 영상이 없어요")
+                    val files = java.io.File(dir).listFiles { f -> f.name.endsWith(".jpg") }?.sortedBy { it.name }.orEmpty()
+                    if (files.isEmpty()) error("전방 영상이 없어요")
+                    val step = maxOf(1, files.size / 30)
+                    val frames = files.filterIndexed { i, _ -> i % step == 0 }.map { load(it.absolutePath, 1300, rgb565 = true) }
+                    val cuts = phoneAlbum.bundles.value.filter { it.group == v.group }.sortedBy { it.cut }
+                    return frames to cuts
                 }
-                val renderer = ai.chaz.media.ReelRenderer(photos, motion, title, SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date()))
+                fun interiorOf(b: ai.chaz.sync.PhoneBundle) = (b.photos[CameraRole.INTERIOR] ?: b.photos.values.first())
+
+                val scene: ai.chaz.media.ReelScene = when (req) {
+                    is ReelRequest.Basic -> {
+                        val photos = req.picks.map { p -> ai.chaz.media.ReelPhoto(load(p.path), p.ai, "📍 ${placeOf(p)} · ${hm.format(Date(atOf(p)))}") }
+                        val focus = if (req.motion == ai.chaz.media.ReelMotion.CROP_ZOOM) photos.map { ph ->
+                            runCatching { segmenter.segment(ph.bitmap) }.getOrNull()?.let { m ->
+                                val w = ph.bitmap.width.toFloat(); val h = ph.bitmap.height.toFloat()
+                                val pw = (m.right - m.left) / w; val ph2 = (m.bottom - m.top) / h
+                                ai.chaz.media.FocusBox(m.left / w + pw * 0.25f, m.top / h, m.right / w - pw * 0.25f, m.top / h + ph2 * 0.35f)
+                            }
+                        } else emptyList()
+                        aiUsed = req.picks.any { it.ai }
+                        ai.chaz.media.ReelRenderer(photos, req.motion, place, date, focus = focus)
+                    }
+                    is ReelRequest.Video -> {
+                        val (front, bundles) = videoParts(req.video)
+                        val cuts = bundles.take(4).map { load(interiorOf(it)) }.ifEmpty { error("실내 컷이 없어요") }
+                        val vPlace = bundles.firstNotNullOfOrNull { it.place } ?: place
+                        val vTime = hm.format(Date(req.video.at))
+                        if (req.style == ai.chaz.media.ReelStyle.OCEAN) {
+                            val pano = if (!req.useAi) null else bundles.firstOrNull { it.photos[CameraRole.FRONT] != null && it.photos[CameraRole.REAR] != null }?.let { b ->
+                                tryAi("scenery") { aiOpenTop.scenery(load(b.photos.getValue(CameraRole.FRONT), 1280), load(b.photos.getValue(CameraRole.REAR), 1280)) }?.also { loaded += it }
+                            }
+                            ai.chaz.media.OceanBridgeScene(front, cuts, vPlace, vTime, date, pano)
+                        } else {
+                            val day = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date(req.video.at))
+                            val copy = if (req.useAi) tryAi("copy") { aiOpenTop.copy("MOVIE", vPlace, day, vTime) ?: error("카피 없음") } else null
+                            val tpl = ai.chaz.media.ReelStyle.movieTemplate(vPlace)
+                            val lines = copy?.optJSONArray("lines")?.let { a -> (0 until a.length()).map { a.getString(it) } }?.takeIf { it.size == 3 } ?: tpl.second
+                            ai.chaz.media.RoadMovieScene(front, cuts, copy?.optString("title")?.ifBlank { null } ?: tpl.first, lines,
+                                copy?.optString("tagline")?.ifBlank { null } ?: tpl.third, vPlace, day, aiCopy = copy != null)
+                        }
+                    }
+                    is ReelRequest.Day -> {
+                        val end = req.dayStart + 24 * 3_600_000L
+                        val sessions = phoneAlbum.bundles.value.filter { it.receivedAt in req.dayStart until end }
+                            .groupBy { it.group ?: it.id }.values.map { g -> g.minBy { it.cut } }.sortedBy { it.receivedAt }
+                        if (sessions.size < 2) error("같은 날 촬영이 2번 이상 필요해요")
+                        val picked = if (sessions.size <= 8) sessions else sessions.indices.map { sessions[it * sessions.size / 8] }.distinct().take(8)
+                        val cuts = picked.mapIndexed { i, b -> ai.chaz.media.SpotCut(load(interiorOf(b), 1200), b.place ?: "스팟 ${i + 1}", hm.format(Date(b.receivedAt))) }
+                        val cal = java.util.Calendar.getInstance().apply { timeInMillis = req.dayStart }
+                        val day = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date(req.dayStart))
+                        val copy = if (req.useAi) tryAi("copy") { aiOpenTop.copy("TRIP", place, day, now, cuts.map { it.place }.distinct()) ?: error("카피 없음") } else null
+                        ai.chaz.media.TripLogScene(cuts, copy?.optString("title")?.ifBlank { null }
+                            ?: ai.chaz.media.ReelStyle.tripTemplateTitle(cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH)),
+                            copy?.optString("line")?.ifBlank { null }, day, demoRoute.map { it.lat to it.lon }, aiTitle = copy != null)
+                    }
+                    is ReelRequest.Picks -> {
+                        val photos = req.picks.map { load(it.path) }
+                        when (req.style) {
+                            ai.chaz.media.ReelStyle.NIGHT -> {
+                                // AI 별하늘은 정차 장면(둘째 컷부터)에만 — 처음 노을 컷은 원본 그대로 (기획서)
+                                val night = if (req.useAi) tryAi("night") {
+                                    photos.mapIndexed { i, b -> if (i == 0) b else aiOpenTop.night(b).also { loaded += it } }
+                                } else null
+                                ai.chaz.media.CampNightScene(photos, night, placeOf(req.picks.last()), date, hm.format(Date(atOf(req.picks.last()))))
+                            }
+                            ai.chaz.media.ReelStyle.PET -> {
+                                val swapped = if (req.useAi) tryAi("petswap") { aiOpenTop.petSwap(photos.last()).also { loaded += it } } else null
+                                ai.chaz.media.PetDriverScene(photos, swapped, date)
+                            }
+                            else -> error("이 스타일은 사진 셀렉이 아니에요")
+                        }
+                    }
+                }
                 val id = "reel_" + newSessionId()
                 val dir = reels.newDir(id)
                 val video = java.io.File(dir, "reel.mp4")
                 val cover = java.io.File(dir, "cover.jpg")
                 android.graphics.Bitmap.createBitmap(ai.chaz.media.ReelSpec.W, ai.chaz.media.ReelSpec.H, android.graphics.Bitmap.Config.ARGB_8888).also { b ->
-                    renderer.drawCover(android.graphics.Canvas(b))
+                    scene.drawCover(android.graphics.Canvas(b))
                     cover.outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
                     b.recycle()
                 }
-                val out = ai.chaz.media.ReelEncoder.encode(renderer, video) { _reelJob.value = ReelJob.Working(it) }
-                android.util.Log.i("ChazReel", "릴스 완료 ${motion.name} ${picks.size}장 ${out.width}x${out.height} ${out.frames}f")
-                val reel = ai.chaz.sync.AlbumReel(id, System.currentTimeMillis(), motion, picks.size, picks.any { it.ai },
-                    renderer.durationMs, video.absolutePath, cover.absolutePath)
+                val out = ai.chaz.media.ReelEncoder.encode(scene, video) { _reelJob.value = ReelJob.Working(it) }
+                android.util.Log.i("ChazReel", "릴스 완료 ${req.style.name} ${out.width}x${out.height} ${out.frames}f 소리=${out.audio} AI=$aiUsed")
+                val label = if (req is ReelRequest.Basic) req.motion.label else req.style.title
+                val count = when (req) { is ReelRequest.Basic -> req.picks.size; is ReelRequest.Picks -> req.picks.size; else -> 0 }
+                val reel = ai.chaz.sync.AlbumReel(id, System.currentTimeMillis(), label, count, aiUsed, scene.durationMs, video.absolutePath, cover.absolutePath)
                 reels.add(reel)
-                photos.forEach { it.bitmap.recycle() }
                 reel
             }
+            loaded.forEach { runCatching { it.recycle() } }
             _reelJob.value = result.fold(
                 onSuccess = { ReelJob.Done(it) },
                 onFailure = {
                     android.util.Log.w("ChazReel", "릴스 실패: ${it.javaClass.simpleName} ${it.message}")
-                    ReelJob.Failed("릴스를 만들지 못했어요")
+                    ReelJob.Failed(it.message?.takeIf { m -> m.any { ch -> ch in '가'..'힣' } } ?: "릴스를 만들지 못했어요")
                 },
             )
         }

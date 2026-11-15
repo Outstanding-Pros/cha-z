@@ -53,6 +53,8 @@ from .guard import guard  # noqa: E402
 app.middleware("http")(guard)  # 외부(Cloudflare Tunnel·공인 IP) 요청 보호 — guard.py
 app.include_router(sync.router)
 app.include_router(camera.router)
+from . import reel  # noqa: E402
+app.include_router(reel.router)
 
 
 # 폰용 HTTPS 리스너 (T11). 차량(에뮬레이터)은 그대로 http://10.0.2.2:8787, 폰은 QR 의 https://<LAN IP>:8788.

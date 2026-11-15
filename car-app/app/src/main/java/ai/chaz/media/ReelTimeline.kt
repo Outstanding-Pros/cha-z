@@ -17,11 +17,12 @@ object ReelSpec {
     const val CORE_H = 980
 }
 
-/** 연출 — 같은 셀렉으로 만드는 릴스. (크롭·줌은 다음 단계) */
+/** 연출 — 같은 셀렉으로 만드는 릴스. */
 enum class ReelMotion(val label: String, val desc: String, val minPicks: Int) {
     GRID("한 장 그리드", "고른 사진을 한 화면에 모아 살짝 줌인 (6초)", 1),
     SEQUENCE("1컷 이어붙이기", "한 장씩 2초 간격으로 넘겨요 (장수 × 2초)", 2),
     STACK("쌓아서 공개", "한 장씩 보여 준 뒤 마지막에 한 화면으로 합쳐 공개", 2),
+    CROP_ZOOM("크롭·줌", "한 장에서 얼굴 클로즈업 → 사람 → 전체로 줌아웃 (1장부터)", 1),
 }
 
 /** 한 순간의 화면. single = 꽉 차게 보여 줄 사진 번호(없으면 그리드). progress = 그 장면 안에서 0~1. */
@@ -45,7 +46,11 @@ object ReelTimeline {
         ReelMotion.GRID -> GRID_MS
         ReelMotion.SEQUENCE -> n * BEAT_MS
         ReelMotion.STACK -> n * BEAT_MS + REVEAL_MS
+        ReelMotion.CROP_ZOOM -> 3 * cropBeat(n) * n
     }
+
+    /** 크롭·줌 한 단계 길이: 1장이면 2초(6초), 여러 장이면 1초(장당 3초). */
+    fun cropBeat(n: Int): Long = if (n <= 1) BEAT_MS else BEAT_MS / 2
 
     fun frames(m: ReelMotion, n: Int): Int = (durationMs(m, n) * ReelSpec.FPS / 1000).toInt()
 
@@ -54,6 +59,7 @@ object ReelTimeline {
         val t = tMs.coerceIn(0, d - 1)
         return when (m) {
             ReelMotion.GRID -> ReelMoment(null, t.toFloat() / d)
+            ReelMotion.CROP_ZOOM -> ReelMoment((t / (3 * cropBeat(n))).toInt(), (t % (3 * cropBeat(n))).toFloat() / (3 * cropBeat(n)))
             ReelMotion.SEQUENCE -> ReelMoment((t / BEAT_MS).toInt(), (t % BEAT_MS).toFloat() / BEAT_MS)
             ReelMotion.STACK -> if (t < n * BEAT_MS) ReelMoment((t / BEAT_MS).toInt(), (t % BEAT_MS).toFloat() / BEAT_MS)
             else {
