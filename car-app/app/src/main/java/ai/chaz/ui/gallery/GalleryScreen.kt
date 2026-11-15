@@ -71,8 +71,10 @@ fun GalleryScreen(graph: AppGraph) {
     // L1 오픈카는 창문 마스크가 있을 때만(고정 위치 차량 실내 카메라).
     val layouts = listOf(Layout.CUT_FRAME, Layout.WINDOW_SWAP, Layout.ROUTE_OVERLAY).filter { graph.composer.available(it) }
     var frame by remember { mutableStateOf<Layout?>(null) }
+    var reel by remember { mutableStateOf(false) }
     val f = frame
-    if (f == null) FramePicker(graph, layouts) { frame = it }
+    if (reel) FourCutBuilder(graph, onBack = { reel = false }, reel = true)
+    else if (f == null) FramePicker(graph, layouts, onReel = { reel = true }) { frame = it }
     else if (f == Layout.CUT_FRAME) FourCutBuilder(graph, onBack = { frame = null })
     else BundleFrameBuilder(graph, f, onBack = { frame = null })
 }
@@ -90,7 +92,7 @@ private fun frameDesc(l: Layout): String = when (l) {
 
 /** ① 프레임 고르기. */
 @Composable
-private fun FramePicker(graph: AppGraph, layouts: List<Layout>, onPick: (Layout) -> Unit) {
+private fun FramePicker(graph: AppGraph, layouts: List<Layout>, onReel: () -> Unit, onPick: (Layout) -> Unit) {
     val draft by graph.albumDraft.collectAsState()
     val bundles by graph.phoneAlbum.bundles.collectAsState()
     val made by graph.phoneAlbum.made.collectAsState()
@@ -114,6 +116,17 @@ private fun FramePicker(graph: AppGraph, layouts: List<Layout>, onPick: (Layout)
                     PrimaryButton("이 프레임으로", Modifier.fillMaxWidth()) { onPick(l) }
                 }
             }
+            // 릴스(세로 9:16) — 인스타 릴스 규격 영상 + 커버
+            Column(
+                Modifier.weight(1f).clip(Tokens.cardShape).background(Tokens.surface)
+                    .border(2.dp, Tokens.accent, Tokens.cardShape).clickable(onClick = onReel).padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(REEL_TITLE, color = Tokens.accent, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text(REEL_DESC, color = Tokens.text2, fontSize = 17.sp, lineHeight = 26.sp)
+                Spacer(Modifier.padding(top = 8.dp))
+                PrimaryButton("릴스 만들기", Modifier.fillMaxWidth(), onClick = onReel)
+            }
         }
     }
 }
@@ -121,13 +134,14 @@ private fun FramePicker(graph: AppGraph, layouts: List<Layout>, onPick: (Layout)
 /** 오른쪽 칸 카드 공통: 제목·설명·칸 격자·만들기 버튼. */
 @Composable
 private fun SlotsCard(
-    layout: Layout, onBack: () -> Unit, hint: String, n: Int,
+    title: String, desc: String, onBack: () -> Unit, hint: String, n: Int,
     slot: @Composable (Int, Modifier) -> Unit,
     buttonText: String, enabled: Boolean, message: String?, onMake: () -> Unit,
     modifier: Modifier,
+    extra: @Composable () -> Unit = {},
 ) {
-    Card(modifier.fillMaxHeight(), title = frameTitle(layout), trailing = { Chip("← 프레임 다시 고르기", selected = false, onClick = onBack) }) {
-        Text(frameDesc(layout), color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
+    Card(modifier.fillMaxHeight(), title = title, trailing = { Chip("← 프레임 다시 고르기", selected = false, onClick = onBack) }) {
+        Text(desc, color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
         SectionLabel(hint, Modifier.padding(top = 16.dp))
         val grid = if (n == 4) listOf(0..1, 2..3) else listOf(0..0)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -138,6 +152,7 @@ private fun SlotsCard(
                 }
             }
         }
+        extra()
         Spacer(Modifier.weight(1f))
         PrimaryButton(buttonText, Modifier.fillMaxWidth(), enabled = enabled, onClick = onMake)
         message?.let { Text(it, color = Tokens.warn, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp)) }
@@ -170,7 +185,7 @@ private const val BUSY_TEXT = "지금은 만들 수 없어요(촬영 중이거�
 
 /** ② L2 네컷: 칸마다 앨범 사진 한 장(묶음의 실내·전방·후방 중 하나, 또는 만든 사진). */
 @Composable
-private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit) {
+private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit, reel: Boolean = false) {
     val bundles by graph.phoneAlbum.bundles.collectAsState()
     val videos by graph.phoneAlbum.videos.collectAsState()
     val made by graph.phoneAlbum.made.collectAsState()
@@ -271,8 +286,20 @@ private fun FourCutBuilder(graph: AppGraph, onBack: () -> Unit) {
             }
         }
         val filled = slots.filterNotNull()
+        if (reel) {
+            ReelCard(graph, filled, onBack, slot = { i, m ->
+                val p = slots[i]
+                SlotFrame(i + 1, i == active, p != null, p?.let { (if (it.ai) "✨ " else "") + it.label } ?: "", m,
+                    onClick = { active = i }, onClear = { slots[i] = null; active = i }) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(Tokens.controlShape).background(Tokens.bg)) {
+                        PhotoImage(p?.path, Modifier.fillMaxSize(), crop = false)
+                    }
+                }
+            })
+            return@Row
+        }
         SlotsCard(
-            Layout.CUT_FRAME, onBack, "칸 — 칸을 고르고 왼쪽 사진을 누르세요", n,
+            frameTitle(Layout.CUT_FRAME), frameDesc(Layout.CUT_FRAME), onBack, "칸 — 칸을 고르고 왼쪽 사진을 누르세요", n,
             slot = { i, m ->
                 val p = slots[i]
                 SlotFrame(i + 1, i == active, p != null, p?.let { (if (it.ai) "✨ " else "") + it.label } ?: "", m,
@@ -359,7 +386,7 @@ private fun BundleFrameBuilder(graph: AppGraph, layout: Layout, onBack: () -> Un
             }
         }
         SlotsCard(
-            layout, onBack, "칸 — 왼쪽 묶음을 누르세요", 1,
+            frameTitle(layout), frameDesc(layout), onBack, "칸 — 왼쪽 묶음을 누르세요", 1,
             slot = { _, m ->
                 val b = slot
                 SlotFrame(1, true, b != null, b?.let(::originText) ?: "", m, onClick = {}, onClear = { slot = null }) {
@@ -376,5 +403,55 @@ private fun BundleFrameBuilder(graph: AppGraph, layout: Layout, onBack: () -> Un
             },
             modifier = Modifier.width(760.dp),
         )
+    }
+}
+
+private const val REEL_TITLE = "릴스 (세로)"
+private const val REEL_DESC = "인스타 릴스 규격(1080×1920, 9:16) 영상과 커버. 앨범 사진 1~4장을 고르고 연출(그리드 · 이어붙이기 · 쌓아서 공개)을 골라요."
+
+/** ② 릴스: 칸 1~4 + 연출 고르기 + 만들기(진행률) + 결과 미리보기·폰 전송. 결과는 앨범에도 들어간다. */
+@Composable
+private fun ReelCard(graph: AppGraph, picks: List<AlbumPick>, onBack: () -> Unit, slot: @Composable (Int, Modifier) -> Unit) {
+    val job by graph.reelJob.collectAsState()
+    val driving by graph.driving.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    var motion by remember { mutableStateOf(ai.chaz.media.ReelMotion.STACK) }
+    var sent by remember { mutableStateOf<String?>(null) }
+    val working = job is AppGraph.ReelJob.Working
+    val enough = picks.size >= motion.minPicks
+    Row(Modifier.width(1060.dp).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        SlotsCard(
+            REEL_TITLE, REEL_DESC, onBack, "칸 — 칸을 고르고 왼쪽 사진을 누르세요 (순서 = 릴스 순서)", 4, slot,
+            buttonText = when {
+                working -> "만드는 중… ${((job as AppGraph.ReelJob.Working).progress * 100).toInt()}%"
+                enough -> "${motion.label} 릴스 만들기 (${picks.size}장 · ${ai.chaz.media.ReelTimeline.durationMs(motion, picks.size) / 1000}초)"
+                else -> "사진을 ${motion.minPicks}장 이상 넣어 주세요"
+            },
+            enabled = enough && !working, message = (job as? AppGraph.ReelJob.Failed)?.message,
+            onMake = { sent = null; graph.makeReel(picks, motion) },
+            modifier = Modifier.weight(1f),
+            extra = {
+                SectionLabel("연출", Modifier.padding(top = 16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ai.chaz.media.ReelMotion.entries.forEach { m -> Chip(m.label, selected = m == motion, enabled = !working) { motion = m } }
+                }
+                Text(motion.desc, color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+            },
+        )
+        // 결과 미리보기 (세로)
+        Card(Modifier.width(380.dp).fillMaxHeight(), title = "결과") {
+            when (val j = job) {
+                is AppGraph.ReelJob.Done -> {
+                    ReelPlayer(j.reel.videoPath, j.reel.coverPath, allowed = !driving.restricted, modifier = Modifier.fillMaxWidth().weight(1f, fill = false))
+                    Text("앨범에 저장했어요 · ${j.reel.durationMs / 1000}초", color = Tokens.text2, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
+                    PrimaryButton("폰으로 보내기", Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        scope.launch { sent = when (val n = graph.sendReel(j.reel)) { null -> "보내지 못했어요"; 0 -> "연결된 폰이 없어요"; else -> "폰 ${n}대로 보냈어요" } }
+                    }
+                    sent?.let { Text(it, color = Tokens.accent, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp)) }
+                }
+                is AppGraph.ReelJob.Working -> Text("1080×1920 영상으로 그리는 중이에요. 다른 탭에 가도 계속 만들어요.", color = Tokens.text2, fontSize = 16.sp, lineHeight = 23.sp)
+                else -> Text("만든 릴스가 여기서 재생돼요.", color = Tokens.text3, fontSize = 16.sp)
+            }
+        }
     }
 }

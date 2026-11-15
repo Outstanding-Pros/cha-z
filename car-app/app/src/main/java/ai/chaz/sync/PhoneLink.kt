@@ -187,19 +187,32 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
             .put("id", result.id).put("sessionIds", JSONArray(result.sessionIds)).put("layout", result.layout.name)
             .put("kind", "PHOTO").put("filters", JSONArray(result.filters))
             .put("sourceKinds", JSONArray(result.sourceKinds.map { it.name })).put("createdOn", result.createdOn)
+        upload(meta, File(result.path), "result.jpg", "image/jpeg")
+    }
+
+    /** 릴스(세로 MP4) 전송 — 서버는 kind=VIDEO 면 .mp4 로 저장한다. */
+    suspend fun deliverReel(r: AlbumReel): Int = withContext(Dispatchers.IO) {
+        val meta = JSONObject()
+            .put("id", r.id).put("sessionIds", JSONArray()).put("layout", "REEL_" + r.motion.name)
+            .put("kind", "VIDEO").put("filters", JSONArray())
+            .put("sourceKinds", JSONArray(if (r.ai) listOf("AI_GENERATED") else emptyList<String>())).put("createdOn", "CAR")
+        upload(meta, File(r.videoPath), "reel.mp4", "video/mp4")
+    }
+
+    private fun upload(meta: JSONObject, file: File, name: String, mime: String): Int {
         val boundary = "----chaz" + System.nanoTime()
         val conn = ServerHttp.open("$baseUrl/sync/results").apply {
-            requestMethod = "POST"; doOutput = true; connectTimeout = 3_000; readTimeout = 20_000
+            requestMethod = "POST"; doOutput = true; connectTimeout = 3_000; readTimeout = 60_000
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         }
-        try {
+        return try {
             conn.outputStream.use { o ->
                 fun field(name: String, value: String) =
                     o.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray(Charsets.UTF_8))
                 field("carDeviceId", carId)
                 field("meta", meta.toString())
-                o.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"result.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".toByteArray())
-                File(result.path).inputStream().use { it.copyTo(o) }
+                o.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$name\"\r\nContent-Type: $mime\r\n\r\n".toByteArray())
+                file.inputStream().use { it.copyTo(o) }
                 o.write("\r\n--$boundary--\r\n".toByteArray())
             }
             if (conn.responseCode != 200) error("전송 실패 HTTP ${conn.responseCode}")

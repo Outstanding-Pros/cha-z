@@ -5,6 +5,7 @@ import ai.chaz.sync.AiConsent
 import ai.chaz.sync.AlbumTool
 import ai.chaz.sync.AlbumTools
 import ai.chaz.sync.AlbumVideo
+import ai.chaz.sync.AlbumReel
 import ai.chaz.sync.MadePhoto
 import ai.chaz.sync.PhoneAlbum
 import ai.chaz.sync.PhoneBundle
@@ -58,17 +59,18 @@ fun AlbumScreen(graph: AppGraph) {
     val bundles by graph.phoneAlbum.bundles.collectAsState()
     val videos by graph.phoneAlbum.videos.collectAsState()
     val made by graph.phoneAlbum.made.collectAsState()
+    val reels by graph.reels.reels.collectAsState()
     var selected by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val sel = selected?.let { id -> bundles.firstOrNull { it.id == id } ?: made.firstOrNull { it.id == id } ?: videos.firstOrNull { it.id == id } }
-        ?: made.firstOrNull() ?: bundles.firstOrNull() ?: videos.firstOrNull()
-    val selId = when (sel) { is PhoneBundle -> sel.id; is MadePhoto -> sel.id; is AlbumVideo -> sel.id; else -> null }
+    val sel = selected?.let { id -> bundles.firstOrNull { it.id == id } ?: made.firstOrNull { it.id == id } ?: videos.firstOrNull { it.id == id } ?: reels.firstOrNull { it.id == id } }
+        ?: reels.firstOrNull() ?: made.firstOrNull() ?: bundles.firstOrNull() ?: videos.firstOrNull()
+    val selId = when (sel) { is PhoneBundle -> sel.id; is MadePhoto -> sel.id; is AlbumVideo -> sel.id; is AlbumReel -> sel.id; else -> null }
     // 처음 보여준 아이템을 고정 (새 사진이 생겨도 보던 묶음에 머문다)
     androidx.compose.runtime.SideEffect { if (selected != selId) selected = selId }
 
     Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         Card(Modifier.width(560.dp).fillMaxHeight(), title = "앨범") {
-            if (bundles.isEmpty() && videos.isEmpty() && made.isEmpty()) {
+            if (bundles.isEmpty() && videos.isEmpty() && made.isEmpty() && reels.isEmpty()) {
                 Text(
                     "아직 찍은 사진이 없어요.\n'차~즈'(단발·동영상)로 찍거나, 폰 카메라에서 실내 → 전방 → 후방 3장을 찍어 보내면 여기에 쌓여요.",
                     color = Tokens.text2, fontSize = Tokens.bodySize,
@@ -76,6 +78,7 @@ fun AlbumScreen(graph: AppGraph) {
                 return@Card
             }
             val rows: List<Any> = buildList {
+                if (reels.isNotEmpty()) { add("릴스 ${reels.size}편"); addAll(reels) }
                 if (made.isNotEmpty()) { add("만든 사진 ${made.size}장"); addAll(made) }
                 add("찍은 묶음 ${bundles.size}개")
                 val placed = mutableSetOf<String>()
@@ -86,9 +89,16 @@ fun AlbumScreen(graph: AppGraph) {
                 videos.filter { it.id !in placed }.forEach { add(it) }
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(rows, key = { r -> when (r) { is PhoneBundle -> r.id; is MadePhoto -> r.id; is AlbumVideo -> r.id; else -> "h:$r" } }) { r ->
+                items(rows, key = { r -> when (r) { is PhoneBundle -> r.id; is MadePhoto -> r.id; is AlbumVideo -> r.id; is AlbumReel -> r.id; else -> "h:$r" } }) { r ->
                     when (r) {
                         is String -> SectionLabel(r, Modifier.padding(top = 6.dp))
+                        is AlbumReel -> ListRow(r.id == selId, onClick = { selected = r.id }) {
+                            Thumb(r.coverPath, "", Modifier.width(80.dp), ratio = 9f / 16f)
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text((if (r.ai) "✨ " else "") + "릴스 · ${r.motion.label}", color = Tokens.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                                Text("${r.count}장 · ${r.durationMs / 1000}초 · ${whenText(r.at)}", color = Tokens.text3, fontSize = 14.sp)
+                            }
+                        }
                         is MadePhoto -> ListRow(r.id == selId, onClick = { selected = r.id }) {
                             Thumb(r.path, "", Modifier.width(150.dp), ratio = 16f / 9f)
                             Column(Modifier.padding(start = 12.dp)) {
@@ -122,6 +132,7 @@ fun AlbumScreen(graph: AppGraph) {
                 is MadePhoto -> MadeDetail(sel, bundles.firstOrNull { it.id == sel.sourceId }, onSource = { selected = it },
                     onDelete = { scope.launch { graph.phoneAlbum.delete(sel.id) }; selected = null })
                 is AlbumVideo -> VideoDetail(sel, onDelete = { scope.launch { graph.phoneAlbum.delete(sel.id) }; selected = null })
+                is AlbumReel -> ReelDetail(graph, sel, onDelete = { scope.launch { graph.reels.delete(sel.id) }; selected = null })
                 else -> Unit
             }
         }
@@ -241,6 +252,29 @@ private fun VideoDetail(v: AlbumVideo, onDelete: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
             listOf(ai.chaz.capture.CameraRole.FRONT, ai.chaz.capture.CameraRole.REAR).forEach { role ->
                 ClipThumb(v.clips[role], PhoneAlbum.label(role), Modifier.weight(1f), ratio = 16f / 9f, sample = 4)
+            }
+        }
+    }
+}
+
+/** 릴스 한 편: 세로 재생(정차 중만) + 폰으로 보내기. */
+@Composable
+private fun ReelDetail(graph: AppGraph, r: AlbumReel, onDelete: () -> Unit) {
+    val driving by graph.driving.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    var sent by remember(r.id) { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxSize(), title = (if (r.ai) "✨ " else "") + "릴스 · ${r.motion.label}", trailing = { Chip("릴스 지우기", selected = false, onClick = onDelete) }) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            ReelPlayer(r.videoPath, r.coverPath, allowed = !driving.restricted, modifier = Modifier.fillMaxHeight())
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("1080×1920 · 9:16 · ${r.durationMs / 1000}초 · 사진 ${r.count}장", color = Tokens.text, fontSize = 18.sp)
+                Text(whenText(r.at), color = Tokens.text2, fontSize = 16.sp)
+                if (r.ai) AlbumTag("AI 생성 포함", Tokens.ai)
+                PrimaryButton("폰으로 보내기", Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    scope.launch { sent = when (val n = graph.sendReel(r)) { null -> "보내지 못했어요"; 0 -> "연결된 폰이 없어요"; else -> "폰 ${n}대로 보냈어요" } }
+                }
+                sent?.let { Text(it, color = Tokens.accent, fontSize = 15.sp) }
+                Text("인스타 릴스 규격이라 폰에서 받아 그대로 올릴 수 있어요. 소리는 아직 없어요.", color = Tokens.text3, fontSize = 14.sp, lineHeight = 20.sp)
             }
         }
     }

@@ -92,6 +92,31 @@ internal fun ClipThumb(dir: String?, label: String, modifier: Modifier, ratio: F
     Thumb(files.getOrNull(i)?.absolutePath, label, modifier, ratio, sample)
 }
 
+/**
+ * 릴스(세로 MP4) 반복 재생. allowed = false(주행 중)면 재생하지 않고 커버만 (규칙 6: 주행 중 영상 재생 금지).
+ */
+@Composable
+internal fun ReelPlayer(video: String, cover: String, allowed: Boolean, modifier: Modifier) {
+    Box(modifier.aspectRatio(9f / 16f).clip(Tokens.controlShape).background(Tokens.bg)) {
+        if (!allowed) {
+            PhotoImage(cover, Modifier.fillMaxSize(), crop = false, sample = 2)
+            return@Box
+        }
+        androidx.compose.ui.viewinterop.AndroidView(
+            factory = { ctx ->
+                android.widget.VideoView(ctx).apply {
+                    setOnPreparedListener { mp -> mp.isLooping = true; mp.setVolume(0f, 0f); start() }
+                    tag = video
+                    setVideoPath(video)
+                }
+            },
+            update = { v -> if (v.tag != video) { v.tag = video; v.setVideoPath(video) } },
+            onRelease = { it.stopPlayback() },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
 @Composable
 internal fun BundleThumbs(b: PhoneBundle, modifier: Modifier = Modifier) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

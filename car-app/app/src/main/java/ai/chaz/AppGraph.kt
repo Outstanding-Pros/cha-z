@@ -119,6 +119,8 @@ class AppGraph(context: Context) {
 
     /** 앨범 (편집 탭): 폰 직접 촬영 묶음 + 차~즈 촬영(단발·동영상) 결과. */
     val phoneAlbum by lazy { ai.chaz.sync.PhoneAlbumStore(appContext) }
+    /** 앨범의 릴스(세로 9:16 MP4). */
+    val reels by lazy { ai.chaz.sync.ReelStore(appContext) }
 
     /** 차~즈 촬영 방식 (단발 / 동영상). '차즈'·셔터는 이 방식으로 찍는다. */
     private val _captureMode = MutableStateFlow(
@@ -514,6 +516,7 @@ class AppGraph(context: Context) {
         // 폰 음성 리모컨: 폰에서 말한 문장을 차 마이크로 들은 것처럼 처리 (버튼을 눌렀으니 호출어는 생략)
         // 폰 직접 촬영 묶음: 바로 합성하지 않고 갤러리(폰 앨범)에 저장 → 사용자가 자리마다 골라 편집
         scope.launch { phoneAlbum.load() }
+        scope.launch { reels.load() }
         phone.listen(
             onVoice = { text -> voice.handleText(text, requireWake = false) },
             onBundle = { id, roles -> onPhoneBundle(id, roles) },
@@ -659,6 +662,65 @@ class AppGraph(context: Context) {
         previewPrefs.value = previewPrefs.value.copy(layout = Layout.CUT_FRAME)
         return capture.import(ai.chaz.capture.CaptureSessionEngine.Result(session, cuts, emptyList(), stopped = false))
     }
+
+    // ---- 릴스(세로 9:16) 만들기 ----
+    sealed interface ReelJob {
+        data class Working(val progress: Float) : ReelJob
+        data class Done(val reel: ai.chaz.sync.AlbumReel) : ReelJob
+        data class Failed(val message: String) : ReelJob
+    }
+    private val _reelJob = MutableStateFlow<ReelJob?>(null)
+    val reelJob: StateFlow<ReelJob?> = _reelJob.asStateFlow()
+    fun clearReelJob() { if (_reelJob.value !is ReelJob.Working) _reelJob.value = null }
+
+    /** 고른 앨범 사진(1~4장) + 연출 → 1080×1920 MP4 + 커버. 결과는 앨범(reels)에 들어간다. 탭을 옮겨도 이어진다. */
+    fun makeReel(picks: List<ai.chaz.sync.AlbumPick>, motion: ai.chaz.media.ReelMotion) {
+        if (_reelJob.value is ReelJob.Working || picks.size < motion.minPicks) return
+        _reelJob.value = ReelJob.Working(0f)
+        scope.launch(Dispatchers.Default) {
+            val result = runCatching {
+                val title = spotGuide.placeForSession() ?: "오늘의 드라이브"
+                val hm = SimpleDateFormat("HH:mm", Locale.KOREA)
+                val photos = picks.map { p ->
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(p.path, opts)
+                    val sample = generateSequence(1) { it * 2 }.first { opts.outWidth / (it * 2) < 1400 }
+                    val bmp = BitmapFactory.decodeFile(p.path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: error("사진을 읽지 못했어요")
+                    val at = when (p) { is ai.chaz.sync.AlbumPick.Photo -> p.bundle.receivedAt; is ai.chaz.sync.AlbumPick.Made -> p.photo.at }
+                    ai.chaz.media.ReelPhoto(bmp, p.ai, "📍 $title · ${hm.format(Date(at))}")
+                }
+                val renderer = ai.chaz.media.ReelRenderer(photos, motion, title, SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date()))
+                val id = "reel_" + newSessionId()
+                val dir = reels.newDir(id)
+                val video = java.io.File(dir, "reel.mp4")
+                val cover = java.io.File(dir, "cover.jpg")
+                android.graphics.Bitmap.createBitmap(ai.chaz.media.ReelSpec.W, ai.chaz.media.ReelSpec.H, android.graphics.Bitmap.Config.ARGB_8888).also { b ->
+                    renderer.drawCover(android.graphics.Canvas(b))
+                    cover.outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+                    b.recycle()
+                }
+                val out = ai.chaz.media.ReelEncoder.encode(renderer, video) { _reelJob.value = ReelJob.Working(it) }
+                android.util.Log.i("ChazReel", "릴스 완료 ${motion.name} ${picks.size}장 ${out.width}x${out.height} ${out.frames}f")
+                val reel = ai.chaz.sync.AlbumReel(id, System.currentTimeMillis(), motion, picks.size, picks.any { it.ai },
+                    renderer.durationMs, video.absolutePath, cover.absolutePath)
+                reels.add(reel)
+                photos.forEach { it.bitmap.recycle() }
+                reel
+            }
+            _reelJob.value = result.fold(
+                onSuccess = { ReelJob.Done(it) },
+                onFailure = {
+                    android.util.Log.w("ChazReel", "릴스 실패: ${it.javaClass.simpleName} ${it.message}")
+                    ReelJob.Failed("릴스를 만들지 못했어요")
+                },
+            )
+        }
+    }
+
+    /** 릴스를 연결된 폰으로. 보낸 폰 수 (실패면 null). */
+    suspend fun sendReel(r: ai.chaz.sync.AlbumReel): Int? =
+        if (!phone.state.value.paired) 0
+        else runCatching { phone.deliverReel(r) }.onFailure { android.util.Log.w("ChazReel", "전송 실패: ${it.message}") }.getOrNull()
 
     private fun newSessionId(): String =
         SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + "-" + (1000..9999).random()
