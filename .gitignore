@@ -22,3 +22,12 @@ __pycache__/
 
 # 내부 기획 문서 원본 (공개 저장소에 올리지 않음)
 docs/*.pdf
+
+# 영상 작업 폴더: 원본 클립·렌더 결과(수백 MB)는 올리지 않는다. 최종본은 YouTube 등 링크로
+video/**/*.mp4
+video/**/*.mov
+video/**/*.wav
+video/**/node_modules/
+video/**/out/
+video/**/analysis/**/*.jpg
+video/**/analysis/**/*.png
