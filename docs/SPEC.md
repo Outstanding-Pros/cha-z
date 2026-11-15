@@ -583,15 +583,15 @@ cha-z/
 - [x] release 빌드(자체 키스토어 서명), 깨끗한 에뮬레이터에 처음부터 설치·실행 확인 (11/10, 앱 삭제 후 설치 → 권한 3개 허용 → 촬영)
 - [x] 네트워크 없이도 촬영·합성 동작 확인 (11/10, Wi-Fi·데이터 끔: 촬영 4/4·L2·갤러리 저장, 폰 전송은 '서버에 연결할 수 없어요')
 - [x] 외부 목 영상·오프라인 음성 모델 포함 여부, APK 용량 확인 (104MB — docs/spike.md)
-- [ ] GitHub Releases 또는 apk/ 폴더에 업로드
-- [ ] README: 앱 이름, 한 줄 소개, 실행 방법, 테스트 환경(Pleos Connect Emulator API 34, 웹캠), 필요한 설정, APK 위치
-- [ ] README: Virtual Console 시연 절차(기어, 위치 변경)와 음성 명령 목록
-- [ ] README: SDK 가용성 표와 어댑터 구조 요약
-- [ ] 비밀값 커밋 점검, `local.properties.example` 제공
+- [x] GitHub Releases 또는 apk/ 폴더에 업로드 (11/15, `apk/OutstandingPros_차~즈_release.apk` 72MB, 저장소 Outstanding-Pros/chaz)
+- [x] README: 앱 이름, 한 줄 소개, 실행 방법, 테스트 환경(Pleos Connect Emulator v2.1.0 API 34, 2560×1440 mdpi), 필요한 설정, APK 위치 (11/15 '제출 정보' 표)
+- [x] README: Virtual Console 시연 절차(기어, 위치 변경)와 음성 명령 목록
+- [x] README: SDK 가용성 표와 어댑터 구조 요약
+- [x] 비밀값 커밋 점검, `local.properties.example` 제공 (11/15 전체 이력 점검: 키·토큰·도메인·키스토어 없음)
 - [ ] 프라이빗 저장소면 **11/16(월)까지 Public 전환**, 1차 발표(11/23)까지 유지 (공식 안내 11/11 확인: collaborator 초대 불필요)
 - [ ] APK 는 `apk/팀명_앱이름_release.apk`, 이메일에 저장소 주소 + 최종 commit hash (appdevchallenge@hyundai-partners.com, 제목 "[차량용 앱 개발 공모전] 팀명_대표자명")
 - [ ] 숏폼(선택, 가산점 없음, 별도 상금): 30초~1분 세로, Instagram 릴스/YouTube Shorts, 해시태그 2~3개(#HMG차량용앱개발공모전 필수), 링크는 접수양식에 기재
-- [ ] BGM·외부 영상·오픈소스 라이선스 표기
+- [x] BGM·외부 영상·오픈소스 라이선스 표기 (README '라이선스·출처')
 
 ## 시연 영상 콘티 (약 2분)
 1. 문제: 차 안에서는 사람과 풍경을 한 장에 담기 어렵다 (10초, 그래픽)
