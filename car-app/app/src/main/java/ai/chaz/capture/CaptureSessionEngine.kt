@@ -100,8 +100,9 @@ class CaptureSessionEngine(
                 val cutAt = t0 + i * interval
                 // 원격 소스(폰)에 셔터 시각을 미리 알린다 — 네트워크 지연이 있어도 그 순간에 찍히게 (T11)
                 sources.forEach { it.scheduleShot(i, cutAt - now()) }
-                for (k in words downTo 1) {
-                    until(cutAt - k * CaptureRules.COUNTDOWN_STEP_MS)
+                // "하나"(컷 2초 전) → "둘"(1초 전) → 셔터 효과음. 포즈는 지시하지 않는다.
+                for (k in 1..words) {
+                    until(cutAt - (words - k + 1) * CaptureRules.COUNTDOWN_STEP_MS)
                     countdown = k
                     cues.countdown(k)
                 }
@@ -132,8 +133,8 @@ class CaptureSessionEngine(
             speakSafely(
                 when {
                     stopped -> phrases.stopped()
-                    isDriving() -> phrases.doneDriving()
-                    else -> phrases.doneParked()
+                    isDriving() -> phrases.doneDriving(cuts.size)
+                    else -> phrases.doneParked(cuts.size)
                 },
             )
             Result(session, cuts.toList(), clips, stopped)

@@ -88,7 +88,7 @@ class CaptureSessionEngineTest {
         assertTrue("리드 타임 ${scheduled.map { it.third - it.second }}", scheduled.all { it.third - it.second >= 2_000 })
     }
 
-    @Test fun `12초 4컷 - 3초 간격으로 컷마다 세 소스, 카운트다운 셋둘하나 후 셔터`() = runTest {
+    @Test fun `12초 4컷 - 3초 간격으로 컷마다 세 소스, 하나(2초 전) 둘(1초 전) 후 셔터`() = runTest {
         val (engine, store) = setup(introMs = 2_000)
         val result = engine.run(session(), sources, adjusted = false, isDriving = { false })
 
@@ -97,9 +97,9 @@ class CaptureSessionEngineTest {
         assertEquals(listOf(3_000L, 6_000L, 9_000L, 12_000L), store.cutTimes)
         assertTrue(result.cuts.all { c -> c.frames.map { it.role } == listOf(CameraRole.INTERIOR, CameraRole.FRONT, CameraRole.REAR) })
 
-        // 시작 안내(2초) 뒤 t0 = 2000. 첫 컷 5000 직전 2700/1800/900ms 에 카운트다운
-        assertEquals(listOf("2300:cd3", "3200:cd2", "4100:cd1", "5000:shutter"), cuesLog.take(4))
-        assertEquals(16, cuesLog.size)
+        // 시작 안내(2초) 뒤 t0 = 2000. 첫 컷 5000 의 2초 전 "하나", 1초 전 "둘" (스타일 기획서)
+        assertEquals(listOf("3000:cd1", "4000:cd2", "5000:shutter"), cuesLog.take(3))
+        assertEquals(12, cuesLog.size)
 
         // 클립: 0.5초 간격, 12.5초 → 소스당 약 25장
         sources.forEach { assertTrue("${it.role} ${store.clipFrames[it.role]}", (store.clipFrames[it.role] ?: 0) in 24..27) }
@@ -116,7 +116,7 @@ class CaptureSessionEngineTest {
         assertEquals(listOf(4_000L), store.cutTimes)
         assertTrue(store.clipFrames.isEmpty())
         assertTrue(result.clips.isEmpty())
-        assertEquals(listOf("3300:cd3", "4200:cd2", "5100:cd1", "6000:shutter"), cuesLog)
+        assertEquals(listOf("4000:cd1", "5000:cd2", "6000:shutter"), cuesLog)
         assertEquals("한 장 찍을게요", speechLog.first())
     }
 
@@ -140,11 +140,12 @@ class CaptureSessionEngineTest {
         assertEquals("done-driving", speechLog.last())
     }
 
-    @Test fun `간격 2초면 카운트다운은 둘 하나`() = runTest {
+    @Test fun `간격 2초도 하나 둘, 그보다 짧으면 하나만`() = runTest {
         val (engine) = setup(introMs = 0)
         engine.run(session(CaptureConfig(durationSec = 8, count = 4)), sources, adjusted = false, isDriving = { false })
-        assertEquals(listOf("200:cd2", "1100:cd1", "2000:shutter"), cuesLog.take(3))
+        assertEquals(listOf("0:cd1", "1000:cd2", "2000:shutter"), cuesLog.take(3))
         assertFalse(cuesLog.any { it.endsWith("cd3") })
+        assertEquals(1, ai.chaz.data.CaptureRules.countdownWords(1_500))
     }
 
     @Test fun `중지하면 찍은 컷까지 저장하고 멈춤 안내`() = runTest {

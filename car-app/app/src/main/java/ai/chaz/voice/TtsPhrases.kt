@@ -13,6 +13,9 @@ interface TtsPhrases {
     fun captureAdjusted(c: CaptureConfig): String
     fun doneDriving(): String
     fun doneParked(): String
+    /** n = 저장한 컷 수 ("4장 저장했어요…"). */
+    fun doneDriving(n: Int): String = doneDriving()
+    fun doneParked(n: Int): String = doneParked()
     fun stopped(): String
     /** 단발: 실내·전방·후방 한 장씩. */
     fun captureSingle(): String = "한 장 찍을게요"
@@ -20,11 +23,22 @@ interface TtsPhrases {
 
 class ResourceTtsPhrases(context: Context) : TtsPhrases, VoicePhrases {
     private val res = context.applicationContext.resources
-    override fun captureStart(c: CaptureConfig) = res.getString(R.string.tts_capture_start, CaptureRules.formatDuration(c.durationSec), c.count)
-    override fun captureStartDriving(c: CaptureConfig) = res.getString(R.string.tts_capture_start_driving, CaptureRules.formatDuration(c.durationSec), c.count)
+    /** 3초 간격 기본(12초 4컷)이면 "4컷 찍을게요.", 아니면 시간까지. 주행·정차 같은 문구(포즈 지시 없음). */
+    private fun start(c: CaptureConfig) =
+        if (c.durationSec == c.count * 3) res.getString(R.string.tts_capture_start_short, c.count)
+        else res.getString(R.string.tts_capture_start, CaptureRules.formatDuration(c.durationSec), c.count)
+    override fun captureStart(c: CaptureConfig) = start(c)
+    override fun captureStartDriving(c: CaptureConfig) = start(c)
     override fun captureAdjusted(c: CaptureConfig) = res.getString(R.string.tts_capture_adjusted, CaptureRules.formatDuration(c.durationSec), c.count)
     override fun doneDriving() = res.getString(R.string.tts_done_driving)
     override fun doneParked() = res.getString(R.string.tts_done_parked)
+    override fun doneDriving(n: Int) = res.getString(R.string.tts_done_driving_n, n)
+    override fun doneParked(n: Int) = res.getString(R.string.tts_done_parked_n, n)
+    override fun retake() = res.getString(R.string.tts_retake)
+    override fun bgmPlaying(title: String) = res.getString(R.string.tts_bgm_playing, title)
+    override fun bgmStopped() = res.getString(R.string.tts_bgm_stopped)
+    override fun handoffSending() = res.getString(R.string.tts_handoff_sending)
+    override fun handoffNotPaired() = res.getString(R.string.tts_handoff_not_paired)
     override fun stopped() = res.getString(R.string.tts_stopped)
     override fun captureSingle() = res.getString(R.string.tts_capture_single)
     fun albumArrived(n: Int) = res.getString(R.string.tts_album_arrived, n)

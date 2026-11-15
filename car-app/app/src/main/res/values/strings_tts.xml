@@ -2,17 +2,25 @@
 <!-- 모든 음성 안내 문구는 여기 한 곳에 둔다 (SPEC 'TTS 문구 관리'). 한 문장, 3초 이내. -->
 <resources>
     <!-- %1$s = "12초" / "1분", %2$d = 컷 수 -->
-    <string name="tts_capture_start">%1$s 동안 %2$d컷 찍을게요. 창밖과 함께 웃어 주세요.</string>
+    <string name="tts_capture_start">%1$s 동안 %2$d컷 찍을게요.</string>
+    <!-- 스타일 기획서: 포즈는 지시하지 않는다 (주행·정차 같은 문구) -->
+    <string name="tts_capture_start_short">%1$d컷 찍을게요.</string>
     <string name="tts_capture_start_driving">%1$s 동안 %2$d컷 찍을게요.</string>
     <string name="tts_capture_adjusted">%1$s 동안 %2$d컷으로 맞췄어요.</string>
     <string name="tts_done_driving">앨범에 저장했어요. 정차하면 편집할 수 있어요.</string>
     <string name="tts_done_parked">앨범에 저장했어요. 프레임을 골라 꾸며 보세요.</string>
     <string name="tts_capture_single">실내, 전방, 후방 한 장씩 찍을게요.</string>
-    <string name="tts_stopped">촬영을 멈췄어요.</string>
+    <string name="tts_stopped">멈췄어요.</string>
+    <string name="tts_done_driving_n">%1$d장 저장했어요. 정차 후 스타일을 골라요.</string>
+    <string name="tts_done_parked_n">%1$d장 저장했어요. 스타일을 골라 릴스를 만들어 보세요.</string>
     <string name="tts_retake">다시 찍을게요.</string>
     <string name="tts_help">"차즈 1분 동안 10번 찍어줘", "차즈 다시 찍어줘", "차즈 그만"처럼 말해 보세요.</string>
     <string name="tts_unknown">다시 말씀해 주세요.</string>
     <string name="tts_bgm_not_ready">노래 기능은 곧 준비할게요.</string>
+    <string name="tts_bgm_playing">%1$s 틀어 드릴게요.</string>
+    <string name="tts_bgm_stopped">노래를 껐어요.</string>
+    <string name="tts_handoff_sending">휴대폰으로 보낼게요.</string>
+    <string name="tts_handoff_not_paired">정차 후 화면에서 휴대폰 편집을 눌러 주세요.</string>
     <string name="tts_phone_not_paired">정차 후 화면의 QR로 폰을 연결해 주세요.</string>
     <string name="tts_light_driving">정차 후에 바꿀 수 있어요.</string>
     <string name="tts_light_not_ready">조명 연출은 곧 준비할게요.</string>

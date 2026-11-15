@@ -76,6 +76,7 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import android.graphics.BitmapFactory
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -138,13 +139,52 @@ class AppGraph(context: Context) {
     data class AlbumDraft(val layout: Layout, val bundleIds: List<String>)
     val albumDraft = MutableStateFlow<AlbumDraft?>(null)
 
+    /**
+     * 방금 찍은 촬영 (스타일 기획서 '정차 후'): 주행 중엔 완료 카드, 정차하면 [여기서 편집] [휴대폰에서 편집하기] 카드.
+     * 사용자가 고르거나 새로 찍으면 비운다.
+     */
+    data class JustShot(val sessionId: String, val bundleIds: List<String>, val cuts: Int, val at: Long)
+    val justShot = MutableStateFlow<JustShot?>(null)
+    /** 촬영 중 "휴대폰 편집" → 이 촬영이 끝나면 폰으로. */
+    @Volatile private var handoffPending = false
+
+    /** 차 안 BGM (자체 합성 음원). */
+    val bgm by lazy { ai.chaz.media.BgmPlayer(appContext) }
+
     private suspend fun archiveCapture(result: ai.chaz.capture.CaptureSessionEngine.Result) {
         val saved = phoneAlbum.saveCapture(result)
         if (saved.isEmpty()) return
         val cur = previewPrefs.value.layout?.takeIf { it != Layout.SURROUND_SEQUENCE && composer.available(it) } ?: Layout.CUT_FRAME
         val (layout, picks) = ai.chaz.sync.PhoneAlbum.draftFor(saved, cur)
         albumDraft.value = AlbumDraft(layout, picks.map { it.id })
+        justShot.value = JustShot(result.session.id, saved.map { it.id }, saved.size, System.currentTimeMillis())
         android.util.Log.i("ChazAlbum", "촬영 저장: 묶음 ${saved.size}개" + if (result.clips.isNotEmpty()) " + 영상" else "")
+        if (handoffPending) {
+            handoffPending = false
+            scope.launch {
+                val out = handoffLatest()
+                runCatching { speech.speak(if (out == ai.chaz.voice.SendOutcome.SENT) phrases.handoffSending() else phrases.sendFailed()) }
+            }
+        }
+    }
+
+    /** 방금 찍은 촬영(세션 원본: 컷마다 실내·전방·후방)을 연결된 폰으로 — "휴대폰에서 편집하기". */
+    suspend fun handoffLatest(): ai.chaz.voice.SendOutcome {
+        val js = justShot.value
+        val bundles = phoneAlbum.bundles.value.let { all ->
+            if (js != null) all.filter { it.id in js.bundleIds } else all.firstOrNull()?.let { f -> all.filter { (it.group ?: it.id) == (f.group ?: f.id) } }.orEmpty()
+        }.sortedBy { it.cut }
+        if (bundles.isEmpty()) return ai.chaz.voice.SendOutcome.NO_RESULT
+        if (!phone.state.value.paired) return ai.chaz.voice.SendOutcome.FAILED
+        var sent = 0
+        for (b in bundles) for ((role, path) in b.photos) {
+            val ok = runCatching { phone.deliverRaw("${b.id}_${role.name.lowercase()}", b.group ?: b.id, role.name, path) }
+                .onFailure { android.util.Log.w("ChazPhone", "핸드오프 실패: ${it.javaClass.simpleName}") }.isSuccess
+            if (!ok) return if (sent > 0) ai.chaz.voice.SendOutcome.SENT else ai.chaz.voice.SendOutcome.FAILED
+            sent++
+        }
+        android.util.Log.i("ChazPhone", "핸드오프: 원본 ${sent}장")
+        return ai.chaz.voice.SendOutcome.SENT
     }
 
     val capture by lazy {
@@ -183,6 +223,22 @@ class AppGraph(context: Context) {
                 override val phonePaired get() = phone.state.value.paired
                 override suspend fun sendToPhone() = sendLatestToPhone()
                 override suspend fun changeLight(preset: String?) = this@AppGraph.changeLight(preset)
+                override suspend fun awaitNextShot() {
+                    val st = capture.model.value.state as? AppState.Capturing ?: return
+                    kotlinx.coroutines.withTimeoutOrNull(5_000) {
+                        capture.model.first { val s = it.state; s !is AppState.Capturing || s.shotsTaken > st.shotsTaken }
+                    }
+                }
+                override suspend fun awaitCaptureEnd() {
+                    kotlinx.coroutines.withTimeoutOrNull(20_000) { capture.model.first { it.state !is AppState.Capturing } }
+                    // 앨범 저장(Archived)까지 끝나 대기로 돌아갈 때까지
+                    kotlinx.coroutines.withTimeoutOrNull(8_000) { capture.model.first { it.state is AppState.Standby || it.state is AppState.Editing } }
+                }
+                override suspend fun playBgm(mood: String?, next: Boolean) = bgm.play(ai.chaz.media.BgmPlayer.moodOf(mood), next)?.title
+                override val bgmPlaying get() = bgm.now.value != null
+                override fun stopBgm() = bgm.stop()
+                override fun handoffAfterCapture(): Boolean { handoffPending = phone.state.value.paired; return handoffPending }
+                override suspend fun handoffLatest() = this@AppGraph.handoffLatest()
             },
             speech = speech,
             input = speechInput,
@@ -517,6 +573,8 @@ class AppGraph(context: Context) {
         // 폰 직접 촬영 묶음: 바로 합성하지 않고 갤러리(폰 앨범)에 저장 → 사용자가 자리마다 골라 편집
         scope.launch { phoneAlbum.load() }
         scope.launch { reels.load() }
+        // 새로 찍기 시작하면 '방금 찍은 촬영' 카드는 내린다
+        scope.launch { capture.model.collect { if (it.state is AppState.Capturing) justShot.value = null } }
         phone.listen(
             onVoice = { text -> voice.handleText(text, requireWake = false) },
             onBundle = { id, roles -> onPhoneBundle(id, roles) },

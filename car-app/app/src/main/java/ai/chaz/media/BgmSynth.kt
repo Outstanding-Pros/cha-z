@@ -27,8 +27,20 @@ object BgmSynth {
     private val DARK = listOf(chord(110.0, 130.81, 164.81), chord(87.31, 110.0, 130.81))
     private fun chord(vararg f: Double) = f.toList()
 
-    fun render(mood: BgmMood, durationMs: Long): ShortArray {
+    /** 같은 분위기의 다른 곡: 조(반음) 이동. */
+    private val KEYS = intArrayOf(0, 2, -3, 5, -5)
+    const val VARIANTS = 5
+
+    /** 8마디 길이 (반복 재생 단위). */
+    fun loopMs(mood: BgmMood): Long = (8 * 4 * 60_000L) / mood.bpm
+
+    /**
+     * variant = 같은 분위기의 몇 번째 곡(조·아르페지오 순서가 다름). loop = 반복 재생용(긴 페이드 없이 끝을 15ms 만 다듬음).
+     */
+    fun render(mood: BgmMood, durationMs: Long, variant: Int = 0, loop: Boolean = false): ShortArray {
         val n = (durationMs * RATE / 1000).toInt()
+        val key = Math.pow(2.0, KEYS[Math.floorMod(variant, VARIANTS)] / 12.0)
+        val arp = if (Math.floorMod(variant, 2) == 0) intArrayOf(0, 1, 2) else intArrayOf(2, 1, 0)
         val buf = FloatArray(n)
         val beat = 60.0 / mood.bpm
         val bar = beat * 4
@@ -36,7 +48,7 @@ object BgmSynth {
         for (i in 0 until n) {
             val t = i.toDouble() / RATE
             val barIdx = (t / bar).toInt()
-            val ch = prog[barIdx % prog.size]
+            val ch = prog[barIdx % prog.size].map { it * key }
             val inBeat = t % beat
             val beatIdx = (t / beat).toInt()
             var v = 0.0
@@ -48,7 +60,7 @@ object BgmSynth {
                     if (beatIdx % 2 == 0) v += kick(inBeat)
                     v += hat(i, (t + beat / 2) % beat) * 0.6
                     val eighth = (t / (beat / 2)).toInt()
-                    val note = ch[eighth % 3] * (if (mood == BgmMood.PLAYFUL) 4 else 2)
+                    val note = ch[arp[eighth % 3]] * (if (mood == BgmMood.PLAYFUL) 4 else 2)
                     v += 0.07 * tri(note * t) * env(t % (beat / 2), 0.005, 0.18)
                     if (mood == BgmMood.OCEAN) v += 0.05 * noise(i) * (0.5 + 0.5 * sin(2 * PI * t / (bar * 2))) // 파도 소리
                 }
@@ -68,7 +80,8 @@ object BgmSynth {
             buf[i] = v.toFloat()
         }
         // 페이드 인·아웃, 정규화
-        val fadeIn = RATE * 3 / 10; val fadeOut = RATE * 8 / 10
+        val fadeIn = if (loop) RATE * 15 / 1000 else RATE * 3 / 10
+        val fadeOut = if (loop) RATE * 15 / 1000 else RATE * 8 / 10
         for (i in 0 until n) {
             val g = minOf(1f, i.toFloat() / fadeIn, (n - i).toFloat() / fadeOut).coerceAtLeast(0f)
             buf[i] *= g

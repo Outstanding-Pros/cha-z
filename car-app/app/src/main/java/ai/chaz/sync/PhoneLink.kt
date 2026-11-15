@@ -199,6 +199,14 @@ class PhoneLink(private val baseUrl: String, val carId: String, private val scop
         upload(meta, File(r.videoPath), "reel.mp4", "video/mp4")
     }
 
+    /** 휴대폰 편집(핸드오프): 세션 원본 사진 한 장. layout = "RAW_{자리}" — 폰은 저장·공유한다(폰 편집 PWA 는 이후). */
+    suspend fun deliverRaw(id: String, sessionId: String, role: String, path: String): Int = withContext(Dispatchers.IO) {
+        val meta = JSONObject()
+            .put("id", id).put("sessionIds", JSONArray(listOf(sessionId))).put("layout", "RAW_$role")
+            .put("kind", "PHOTO").put("filters", JSONArray()).put("sourceKinds", JSONArray()).put("createdOn", "CAR")
+        upload(meta, File(path), "$role.jpg", "image/jpeg")
+    }
+
     private fun upload(meta: JSONObject, file: File, name: String, mime: String): Int {
         val boundary = "----chaz" + System.nanoTime()
         val conn = ServerHttp.open("$baseUrl/sync/results").apply {

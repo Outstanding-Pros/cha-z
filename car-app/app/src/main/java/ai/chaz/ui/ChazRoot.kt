@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,14 +51,24 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
     val nextSpot = nearest?.let { "다음 스팟 ${it.spot.name} ${ai.chaz.ui.light.dist(it.distanceM)}" }
     // 결과가 새로 뜨면(차 촬영 끝·폰 직접 셔터) 다른 탭에 있어도 홈(편집)으로
     LaunchedEffect((state as? AppState.Editing)?.sessionId) { if (state is AppState.Editing) tab = Tab.HOME }
-    // 차~즈 촬영이 끝나 앨범에 저장되면, 정차 중이면 편집 탭(방금 찍은 묶음이 칸에 들어간 채)으로
-    val draft by graph.albumDraft.collectAsState()
-    LaunchedEffect(draft, driving.restricted) { if (draft != null && !driving.restricted) tab = Tab.GALLERY }
-    val (line1, line2) = when (state) {
-        is AppState.Capturing -> "촬영 중 · ${state.session.config.count}컷 중 ${state.shotsTaken}" to "창밖 풍경과 함께 담고 있어요" // 주행 화면: 포즈·시선 유도 문구 없음
-        is AppState.Saved -> "저장했어요" to "정차 후 편집하거나 '차즈 스마트폰에서 편집할게'라고 말해 주세요"
+    // 차~즈 촬영이 끝나면 '방금 찍은 촬영' — 주행 중엔 완료 카드, 정차하면 [여기서 편집] [휴대폰에서 편집하기] (스타일 기획서)
+    val justShot by graph.justShot.collectAsState()
+    val bgmNow by graph.bgm.now.collectAsState()
+    val light by graph.ambientLight.shown.collectAsState()
+    val capturing = state as? AppState.Capturing
+    val js = justShot
+    val (line1, line2) = when {
+        capturing != null -> "촬영 중" to "창밖 풍경과 함께 담고 있어요" // 주행 화면: 포즈·시선 유도 문구 없음
+        js != null -> "${js.cuts}장 저장했어요" to "정차 후 스타일을 골라요"
+        state is AppState.Saved -> "저장했어요" to "정차 후 스타일을 골라요"
         else -> "촬영 대기" to (nextSpot ?: "'차~즈'라고 말하면 찍어요")
     }
+    val place = remember(capturing?.session?.id) { capturing?.session?.spotName ?: graph.spotGuide.placeForSession() }
+    val info = listOfNotNull(
+        bgmNow?.let { "♪ ${it.title}" },
+        light?.let { "${it.label} 조명" },
+        place?.let { "📍 $it" },
+    ).joinToString("  ·  ").ifEmpty { null }
 
     Box(Modifier.fillMaxSize().background(Tokens.bg)) {
         DrivingLockOverlay(
@@ -67,6 +78,10 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
             // T2: 음성 버튼 1회 탭 후 명령
             onVoice = { graph.voice.voiceButton() },
             action = if (state is AppState.Capturing) "중지" to { graph.capture.stop() } else null,
+            slots = capturing?.let { it.shotsTaken to it.session.config.count } ?: js?.let { it.cuts to it.cuts },
+            info = info,
+            lightColor = light?.color,
+            hint = if (js != null && capturing == null) "🎙 \"차즈, 휴대폰 편집\"" else null,
         ) {
             Row(Modifier.fillMaxSize()) {
                 LeftRail(tab, graph) { tab = it }
@@ -84,6 +99,10 @@ fun ChazRoot(graph: AppGraph, initialTab: Tab = Tab.HOME) {
                     }
                 }
             }
+        }
+        // 정차 후: 방금 찍은 촬영 카드 (주행으로 바뀌면 바로 사라진다 — 정차 중에만 그린다)
+        if (!driving.restricted && capturing == null && tab != Tab.GALLERY && js != null) {
+            JustShotCard(graph, js, onEditHere = { graph.justShot.value = null; tab = Tab.GALLERY }, onClose = { graph.justShot.value = null; graph.albumDraft.value = null })
         }
         // 앰비언트 조명 테두리 (시뮬레이션 또는 실제 조명 미러)
         ai.chaz.ui.light.AmbientBorder(graph)

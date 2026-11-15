@@ -81,7 +81,8 @@ class AppStateMachineTest {
         assertTrue(r.adjusted)
         assertFalse(CaptureRules.normalize(CaptureConfig(30, 6)).adjusted)
         assertEquals(2, CaptureRules.countdownWords(2_000))
-        assertEquals(3, CaptureRules.countdownWords(3_000))
+        assertEquals(2, CaptureRules.countdownWords(3_000)) // "하나, 둘" (스타일 기획서)
+        assertEquals(1, CaptureRules.countdownWords(1_000))
         assertEquals(listOf("12초", "1분", "1분 30초", "2분"), listOf(12, 60, 90, 120).map(CaptureRules::formatDuration))
     }
 }

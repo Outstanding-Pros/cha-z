@@ -29,6 +29,20 @@ interface CommandSink {
     suspend fun sendToPhone(): SendOutcome
     /** 정차 중 조명 바꾸기. 바꾼 프리셋 이름, 못 바꾸면 null. */
     suspend fun changeLight(preset: String?): String?
+
+    // ---- 스타일 기획서 '촬영 중 음성 명령' (다음 찰칵 직후 처리) ----
+    /** 다음 셔터(또는 촬영 끝)까지 기다린다. */
+    suspend fun awaitNextShot() {}
+    /** 촬영이 끝날 때까지 기다린다. */
+    suspend fun awaitCaptureEnd() {}
+    /** BGM 재생. next = 지금 곡의 다음 곡. 재생한 곡 이름, 못 틀면 null. */
+    suspend fun playBgm(mood: String?, next: Boolean): String? = null
+    val bgmPlaying: Boolean get() = false
+    fun stopBgm() {}
+    /** 촬영 중 "휴대폰 편집": 이 촬영이 끝나면 폰으로 보내도록 표시. 폰이 연결돼 있으면 true. */
+    fun handoffAfterCapture(): Boolean = false
+    /** 방금 찍은 촬영(세션 원본)을 폰으로. */
+    suspend fun handoffLatest(): SendOutcome = SendOutcome.NO_RESULT
 }
 
 enum class SendOutcome { SENT, NO_RESULT, FAILED }
@@ -46,6 +60,11 @@ interface VoicePhrases {
     fun noResult(): String
     fun handoffNotReady(): String
     fun lightChanged(label: String): String
+    fun retake(): String = "다시 찍을게요."
+    fun bgmPlaying(title: String): String = "$title 틀어 드릴게요."
+    fun bgmStopped(): String = "노래를 껐어요."
+    fun handoffSending(): String = "휴대폰으로 보낼게요."
+    fun handoffNotPaired(): String = "정차 후 화면에서 휴대폰 편집을 눌러 주세요."
 }
 
 /**
@@ -177,16 +196,18 @@ class VoiceCommandController(
     suspend fun execute(intent: Intent, trigger: TriggerSource) {
         Log.i(TAG, "인텐트 $intent")
         if (sink.capturing) {
-            // 촬영 중에는 멈춤만 받는다 (카운트다운과 겹치지 않게 다른 응답은 하지 않음)
-            if (intent == Intent.Stop) sink.stopCapture()
+            duringCapture(intent)
             return
         }
         when (intent) {
             Intent.CaptureDefault -> sink.startCapture(trigger, sink.defaultConfig)
             is Intent.CaptureCustom -> sink.startCapture(trigger, fill(intent))
-            Intent.Retake -> sink.startCapture(trigger, sink.lastConfig)
+            Intent.Retake -> { speakSafely(phrases.retake()); sink.startCapture(trigger, sink.lastConfig) }
             Intent.Stop -> Unit
-            is Intent.BgmPlay, Intent.BgmStop -> speakSafely(phrases.bgmNotReady())            // TODO(T13·F4)
+            is Intent.BgmPlay -> speakSafely(
+                sink.playBgm(intent.mood, next = intent.mood == null && sink.bgmPlaying)?.let { phrases.bgmPlaying(it) } ?: phrases.bgmNotReady(),
+            )
+            Intent.BgmStop -> { sink.stopBgm(); speakSafely(phrases.bgmStopped()) }
             Intent.SendPhone -> speakSafely(
                 if (!sink.phonePaired) phrases.phoneNotPaired()
                 else when (sink.sendToPhone()) {
@@ -195,13 +216,48 @@ class VoiceCommandController(
                     SendOutcome.FAILED -> phrases.sendFailed()
                 },
             )
-            Intent.HandoffPhone -> speakSafely(if (sink.phonePaired) phrases.handoffNotReady() else phrases.phoneNotPaired()) // TODO(T15)
+            Intent.HandoffPhone -> speakSafely(
+                if (!sink.phonePaired) phrases.handoffNotPaired()
+                else when (sink.handoffLatest()) {
+                    SendOutcome.SENT -> phrases.handoffSending()
+                    SendOutcome.NO_RESULT -> phrases.noResult()
+                    SendOutcome.FAILED -> phrases.sendFailed()
+                },
+            )
             is Intent.LightMood -> speakSafely(
                 if (sink.driving) phrases.lightWhileDriving()
                 else sink.changeLight(intent.preset)?.let { phrases.lightChanged(it) } ?: phrases.lightNotReady(),
             )
             Intent.Help -> speakSafely(phrases.help())
             Intent.Unknown -> speakSafely(phrases.unknown())
+        }
+    }
+
+    /**
+     * 촬영 중 명령 (스타일 기획서): 카운트다운 리듬을 깨지 않게 다음 찰칵 직후 처리하고, 말 대신 짧은 응답음.
+     * 노래 바꿔줘 = 다음 BGM / 휴대폰 편집 = 끝나면 폰으로 / 그만 = 찍은 컷까지 저장 / 다시 = 멈추고 같은 설정으로 재촬영.
+     */
+    private suspend fun duringCapture(intent: Intent) {
+        when (intent) {
+            Intent.Stop -> { sink.awaitNextShot(); sink.stopCapture() }
+            Intent.Retake -> {
+                sink.awaitNextShot(); sink.stopCapture(); sink.awaitCaptureEnd()
+                speakSafely(phrases.retake())
+                sink.startCapture(TriggerSource.VOICE_BUTTON, sink.lastConfig)
+            }
+            is Intent.BgmPlay -> {
+                sink.awaitNextShot()
+                if (sink.playBgm(intent.mood, next = intent.mood == null && sink.bgmPlaying) != null) cues.listening()
+            }
+            Intent.BgmStop -> { sink.awaitNextShot(); sink.stopBgm(); cues.listening() }
+            Intent.HandoffPhone, Intent.SendPhone -> {
+                sink.awaitNextShot()
+                // 응답은 촬영이 끝난 뒤 (카운트다운과 겹치지 않게) — 연결 안 됐으면 그때 안내
+                val paired = sink.handoffAfterCapture()
+                cues.listening()
+                if (!paired) { sink.awaitCaptureEnd(); speakSafely(phrases.handoffNotPaired()) }
+            }
+            else -> Unit // 촬영 중 다른 명령은 무시
         }
     }
 

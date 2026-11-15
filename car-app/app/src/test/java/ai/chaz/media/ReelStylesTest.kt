@@ -17,6 +17,15 @@ class ReelStylesTest {
         }
     }
 
+    @Test fun `BGM - 같은 분위기 다른 곡은 다른 소리, 반복용은 8마디`() {
+        val a = BgmSynth.render(BgmMood.BRIGHT, 1_000, variant = 0)
+        val b = BgmSynth.render(BgmMood.BRIGHT, 1_000, variant = 1)
+        assertFalse(a.contentEquals(b))
+        assertEquals(16_000, BgmSynth.loopMs(BgmMood.BRIGHT)) // BPM 120, 8마디
+        assertEquals(24_000, BgmSynth.loopMs(BgmMood.NIGHT))  // BPM 80
+        assertEquals(BgmMood.NIGHT, BgmPlayer.moodOf("잔잔한"))
+    }
+
     @Test fun `BGM - 같은 입력이면 같은 소리 (자체 음원 재현성)`() {
         assertTrue(BgmSynth.render(BgmMood.OCEAN, 1_000).contentEquals(BgmSynth.render(BgmMood.OCEAN, 1_000)))
     }

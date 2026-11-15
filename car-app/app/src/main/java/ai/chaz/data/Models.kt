@@ -21,7 +21,7 @@ object CaptureRules {
     const val MIN_DURATION = 4
     const val MAX_DURATION = 120
     const val MIN_INTERVAL_MS = 2_000L
-    const val COUNTDOWN_STEP_MS = 900L // assets/tts/cd_*.mp3 길이(약 0.9초)
+    const val COUNTDOWN_STEP_MS = 1_000L // "하나"는 컷 2초 전, "둘"은 1초 전 (스타일 기획서). cd_*.mp3 길이 약 0.9초
 
     data class Normalized(val config: CaptureConfig, val adjusted: Boolean)
 
@@ -38,7 +38,7 @@ object CaptureRules {
     }
 
     /** 간격 3초 미만이면 "둘, 하나"로 줄인다. */
-    fun countdownWords(intervalMs: Long): Int = if (intervalMs >= 3_000) 3 else 2
+    fun countdownWords(intervalMs: Long): Int = if (intervalMs >= 2_000) 2 else 1
 
     /** TTS용 시간 표현. 12 → "12초", 60 → "1분", 90 → "1분 30초". */
     fun formatDuration(sec: Int): String = when {
