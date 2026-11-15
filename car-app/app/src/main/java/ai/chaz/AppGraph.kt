@@ -402,7 +402,7 @@ class AppGraph(context: Context) {
         var n = 0
         try {
             for (r in list) {
-                val ok = runCatching { phone.deliver(r) }.onFailure { android.util.Log.w("ChazAlbum", "전송 실패: ${it.message}") }.isSuccess
+                val ok = runCatching { phone.deliver(r) }.onFailure { android.util.Log.w("ChazAlbum", "전송 실패: ${it.javaClass.simpleName}") }.isSuccess
                 if (!ok) break
                 markDelivered(r.id); n++
             }
@@ -466,7 +466,7 @@ class AppGraph(context: Context) {
                 capture.dispatch(AppEvent.SendToPhone)
                 SendOutcome.SENT
             },
-            onFailure = { android.util.Log.w("ChazPhone", "전송 실패: ${it.message}"); SendOutcome.FAILED },
+            onFailure = { android.util.Log.w("ChazPhone", "전송 실패: ${it.javaClass.simpleName}"); SendOutcome.FAILED },
         )
     }
 
@@ -864,7 +864,7 @@ class AppGraph(context: Context) {
             _reelJob.value = result.fold(
                 onSuccess = { ReelJob.Done(it) },
                 onFailure = {
-                    android.util.Log.w("ChazReel", "릴스 실패: ${it.javaClass.simpleName} ${it.message}")
+                    android.util.Log.w("ChazReel", "릴스 실패: ${it.javaClass.simpleName}")
                     ReelJob.Failed(it.message?.takeIf { m -> m.any { ch -> ch in '가'..'힣' } } ?: "릴스를 만들지 못했어요")
                 },
             )
@@ -874,7 +874,7 @@ class AppGraph(context: Context) {
     /** 릴스를 연결된 폰으로. 보낸 폰 수 (실패면 null). */
     suspend fun sendReel(r: ai.chaz.sync.AlbumReel): Int? =
         if (!phone.state.value.paired) 0
-        else runCatching { phone.deliverReel(r) }.onFailure { android.util.Log.w("ChazReel", "전송 실패: ${it.message}") }.getOrNull()
+        else runCatching { phone.deliverReel(r) }.onFailure { android.util.Log.w("ChazReel", "전송 실패: ${it.javaClass.simpleName}") }.getOrNull()
 
     private fun newSessionId(): String =
         SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + "-" + (1000..9999).random()
