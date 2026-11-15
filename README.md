@@ -4,7 +4,20 @@
 
 차가 촬영 타이밍과 연출을 맡습니다. 명소가 가까워지면 음성으로 미리 알려 주고, 동승자가 "차~즈"라고 말하면 실내 인물과 창밖 풍경을 함께 찍습니다. 정차하면 대화면이 스튜디오가 되어 네컷·오픈카·여행 경로 사진을 만들고, 도착해서 문을 열면 오늘의 여정 앨범이 동승자 폰으로 전송됩니다.
 
-> 2026 현대자동차그룹 차량용 앱 개발 공모전 1차 제출본. 테스트 환경은 **Pleos Connect Emulator** (API 34 Pleos Connect system image)입니다.
+> 2026 현대자동차그룹 차량용 앱 개발 공모전 1차 제출본 (팀 Outstanding Pros). 테스트 환경은 **Pleos Connect Emulator** (API 34 Pleos Connect system image)입니다.
+
+## 제출 정보
+
+| 항목 | 내용 |
+|---|---|
+| 앱 이름 | 차~즈 (Cha~z) — 패키지 `ai.chaz` |
+| 한 줄 소개 | 달리는 차를 포토부스로: "차~즈" 한마디로 실내 인물과 창밖 풍경을 함께 찍고, 정차하면 편집, 도착하면 동승자 폰으로 앨범 전송 |
+| APK | [`apk/OutstandingPros_차~즈_release.apk`](apk/OutstandingPros_차~즈_release.apk) (release, 팀 자체 키스토어 서명, 약 72MB) |
+| 개발·테스트 에뮬레이터 | Pleos Connect Emulator **v2.1.0** (AVD 기기 프로필 `Pleos Connect v2.1.0`, Automotive, API 34, RAM 4GB, Cold boot) |
+| 화면 규격 | **2560 × 1440 px, mdpi(160dpi), 12.8인치, 가로(Landscape)** — 시스템 이미지에 들어 있는 기기 프로필 `devices.xml` 기준 |
+| 앱 실행 사용자 | 에뮬레이터 **user 10(운전자 프로필)** |
+| 필요한 설정 | 첫 실행 시 마이크·카메라·위치 권한 허용. 음성 입력은 `adb emu avd hostmicon`. 기어·도어는 Virtual Console |
+| 서버 | 제출 APK 는 팀이 운영하는 공개 서버에 연결됩니다 (1차 결과 발표일까지 운영). 서버가 필요 없는 기능(촬영·합성·편집·갤러리·음성·조명·도어)은 오프라인에서도 동작하고, 서버가 필요한 기능(폰 연결·전송, ✨ AI 오픈카)은 연결이 안 되면 '서버에 연결할 수 없어요'로 안내합니다 |
 
 ---
 
@@ -102,6 +115,17 @@ copy .env.example .env   # BIZROUTER_API_KEY 등 입력 (.env 는 커밋하지 �
 외부 공개(폰이 다른 네트워크) 시에는 차량 전용 경로에 `X-Chaz-Token` 이 필요하고, AI 경로는 IP당·하루 호출 수를 제한합니다 (`server/app/guard.py`).
 
 ### 2. 차량 앱
+
+**제출 APK 로 바로 실행** (빌드·서버 준비 없이):
+
+```bash
+adb install -r "apk/OutstandingPros_차~즈_release.apk"
+adb shell pm grant --user 10 ai.chaz android.permission.RECORD_AUDIO
+adb shell pm grant --user 10 ai.chaz android.permission.CAMERA
+adb shell am start --user 10 -n ai.chaz/.MainActivity
+```
+
+**소스에서 빌드** (비밀값이 없으면 에뮬레이터 기본 주소와 디버그 서명으로 빌드됩니다):
 
 ```bash
 cd car-app
