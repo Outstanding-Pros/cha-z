@@ -74,6 +74,9 @@ class MainActivity : ComponentActivity() {
             "demo" -> graph.setShootMode(ai.chaz.capture.ShootMode.DEMO)
             "live" -> graph.setShootMode(ai.chaz.capture.ShootMode.LIVE)
         }
+        if (intent?.getStringExtra("shot") == "clear") { // --es shot clear ('방금 찍은 촬영' 카드 내리기 — 시연 녹화 준비)
+            graph.justShot.value = null; graph.albumDraft.value = null; graph.clearReelJob()
+        }
         when (intent?.getStringExtra("door")) { // --es door open|close|auto (도착 자동 전송 시연·테스트)
             "open" -> graph.setDebugDoor(true)
             "close" -> graph.setDebugDoor(false)

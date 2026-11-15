@@ -816,7 +816,7 @@ class AppGraph(context: Context) {
                         val sessions = phoneAlbum.bundles.value.filter { it.receivedAt in req.dayStart until end }
                             .groupBy { it.group ?: it.id }.values.map { g -> g.minBy { it.cut } }.sortedBy { it.receivedAt }
                         if (sessions.size < 2) error("같은 날 촬영이 2번 이상 필요해요")
-                        val picked = if (sessions.size <= 8) sessions else sessions.indices.map { sessions[it * sessions.size / 8] }.distinct().take(8)
+                        val picked = if (sessions.size <= 8) sessions else (0 until 8).map { sessions[it * sessions.size / 8] }.distinct() // 고르게 8곳
                         val cuts = picked.mapIndexed { i, b -> ai.chaz.media.SpotCut(load(interiorOf(b), 1200), b.place ?: "스팟 ${i + 1}", hm.format(Date(b.receivedAt))) }
                         val cal = java.util.Calendar.getInstance().apply { timeInMillis = req.dayStart }
                         val day = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).format(Date(req.dayStart))
