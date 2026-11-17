@@ -1,10 +1,50 @@
 # 차\~즈 (Cha-z)
 
-**달리는 차를 포토부스로.** Pleos Connect(현대차그룹 AAOS)용 차량 포토부스 앱입니다.
+**달리는 차를 포토부스로.**
+Pleos Connect(현대차그룹 AAOS)용 차량 포토부스 앱입니다.
 
-차가 촬영 타이밍과 연출을 맡습니다. 명소가 가까워지면 음성으로 미리 알려 주고, 동승자가 "차\~즈"라고 말하면 실내 인물과 창밖 풍경을 함께 찍습니다. 정차하면 대화면이 스튜디오가 되어 네컷·오픈카·여행 경로 사진을 만들고, 도착해서 문을 열면 오늘의 여정 앨범이 동승자 폰으로 전송됩니다.
+차량 앱이 촬영 타이밍과 연출을 맡습니다. 명소가 가까워지면 음성으로 미리 알려 주고, 동승자가 "차\~즈"라고 말하면 실내 인물과 창밖 풍경을 함께 찍습니다. 정차하면 화면이 스튜디오가 되어 네컷·오픈카·여행 경로 사진을 만들고, 완성된 오늘의 여정 앨범을 폰으로 전송하여 바로 SNS에 공유할 수 있습니다.
 
 > 2026 현대자동차그룹 차량용 앱 개발 공모전 1차 제출본 (팀 Outstanding Pros). 테스트 환경은 **Pleos Connect Emulator** (API 34 Pleos Connect system image)입니다.
+
+## 시연 영상
+
+[![차\~즈 시연 영상 (YouTube)](docs/screenshots/video-intro-panorama.jpg)](https://youtu.be/OoD3s2vo-2s)
+
+▶ **YouTube: https://youtu.be/OoD3s2vo-2s** (약 3분, 1920×1080)
+
+| 인트로 — 스타일 시안 | 인트로 — 펫 드라이버 | 문제와 해결 |
+|---|---|---|
+| ![스타일 시안 판](docs/screenshots/video-intro-styles.jpg) | ![펫 드라이버 시안](docs/screenshots/video-intro-pet.jpg) | ![실내 + 창밖을 한 장에](docs/screenshots/video-problem.jpg) |
+
+인트로의 스타일 시안 영상·이미지는 생성형 AI로 만들었고, 본편은 Pleos Connect Emulator 화면 녹화입니다. 영상 소스(Remotion)는 [`video/demo/`](video/demo/README.md)에 있습니다.
+
+## 앱 화면 (Pleos Connect Emulator)
+
+| 주행 중 음성 촬영 | 정차하면 방금 찍은 4컷 | L1 오픈카 (차창 합성) |
+|---|---|---|
+| ![주행 중 화면: 큰 버튼과 진행 상황만](docs/screenshots/app-driving-capture.jpg) | ![정차 후 방금 찍은 4컷 카드](docs/screenshots/app-just-shot-card.jpg) | ![L1 차창 합성 미리보기](docs/screenshots/app-l1-window-swap.jpg) |
+| **네컷 편집** | **릴스 스타일 (9:16)** | **앨범 · 릴스 모음** |
+| ![네컷 프레임·필터 편집](docs/screenshots/app-fourcut-edit.jpg) | ![오션 브릿지 스타일 릴스 만들기](docs/screenshots/app-reels-style.jpg) | ![앨범의 릴스 모음](docs/screenshots/app-album-reels.jpg) |
+
+외부(전·후방) 카메라 영상은 에뮬레이터에 차량 카메라가 없어 시뮬레이션 영상입니다.
+
+## APK 설치
+
+1. **APK 받기** — 저장소의 [`apk/OutstandingPros_차~즈_release.apk`](apk/OutstandingPros_차~즈_release.apk) (release, 팀 자체 키스토어 서명, 약 72MB). 파일 화면에서 오른쪽 위 다운로드 버튼(Download raw file)을 누르거나 저장소를 clone 합니다.
+2. **에뮬레이터 준비** — Pleos Connect Emulator **v2.1.0** (Automotive, API 34, 2560×1440)을 Cold boot 로 켭니다.
+3. **설치·권한·실행** — 앱은 에뮬레이터의 **user 10(운전자 프로필)** 에서 실행됩니다.
+
+   ```bash
+   adb install -r "apk/OutstandingPros_차~즈_release.apk"
+   adb shell pm grant --user 10 ai.chaz android.permission.RECORD_AUDIO
+   adb shell pm grant --user 10 ai.chaz android.permission.CAMERA
+   adb shell am start --user 10 -n ai.chaz/.MainActivity
+   ```
+
+4. **음성·차량 상태** — 마이크는 `adb emu avd hostmicon` 으로 켜고, 기어(주행/정차)·도어는 에뮬레이터 **Virtual Console** 에서 바꿉니다. 첫 실행 때 위치 권한도 허용해 주세요.
+
+서버 없이도 촬영·합성·편집·앨범·음성·조명은 동작합니다. 폰 전송과 ✨ AI 오픈카는 팀이 운영하는 공개 서버에 연결됩니다. 소스에서 직접 빌드하는 방법은 [실행](#실행)을 참고하세요.
 
 ## 제출 정보
 
@@ -12,7 +52,8 @@
 |---|---|
 | 앱 이름 | 차\~즈 (Cha-z) — 패키지 `ai.chaz` |
 | 한 줄 소개 | 달리는 차를 포토부스로: "차\~즈" 한마디로 실내 인물과 창밖 풍경을 함께 찍고, 정차하면 편집, 도착하면 동승자 폰으로 앨범 전송 |
-| APK | [`apk/OutstandingPros_차~즈_release.apk`](apk/OutstandingPros_차~즈_release.apk) (release, 팀 자체 키스토어 서명, 약 72MB) |
+| APK | [`apk/OutstandingPros_차~즈_release.apk`](apk/OutstandingPros_차~즈_release.apk) (release, 팀 자체 키스토어 서명, 약 72MB) — [설치 방법](#apk-설치) |
+| 시연 영상 | [YouTube](https://youtu.be/OoD3s2vo-2s) |
 | 개발·테스트 에뮬레이터 | Pleos Connect Emulator **v2.1.0** (AVD 기기 프로필 `Pleos Connect v2.1.0`, Automotive, API 34, RAM 4GB, Cold boot) |
 | 화면 규격 | **2560 × 1440 px, mdpi(160dpi), 12.8인치, 가로(Landscape)** — 시스템 이미지에 들어 있는 기기 프로필 `devices.xml` 기준 |
 | 앱 실행 사용자 | 에뮬레이터 **user 10(운전자 프로필)** |
